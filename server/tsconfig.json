@@ -1,1 +1,1 @@
-{ "extends": "../tsconfig.base.json", "compilerOptions": { "module": "NodeNext", "moduleResolution": "NodeNext", "rootDir": ".", "outDir": "dist", "types": ["node"] }, "include": ["**/*.ts"] }
+{ "extends": "../tsconfig.base.json", "compilerOptions": { "module": "NodeNext", "moduleResolution": "NodeNext", "rootDir": ".", "outDir": "dist", "types": ["node"] }, "include": ["**/*.ts"], "exclude": ["dist", "**/*.test.ts"] }

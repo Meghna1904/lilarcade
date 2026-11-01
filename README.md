@@ -20,6 +20,8 @@ npm run build
 npm start
 ```
 
+Run the Hangman unit tests with `npm test`.
+
 The Express server serves the built client and Socket.IO from one port. Set `PORT` in the deployment environment if the host supplies a port.
 
 ## Deploy
@@ -41,6 +43,10 @@ Edit `client/src/config.ts` to change the lobby greeting, footer name, and sugge
 - Join with two names and one shared passcode; confirm both players appear in the same lobby.
 - Try a third device with that passcode; confirm it receives “This room is full.”
 - Refresh or briefly disconnect a player during Hangman; confirm the room, role, and round resume and play pauses while they are away.
-- Play Hangman through a win and a six-mistake loss; check that roles swap on replay and the session score updates.
-- Inspect the Socket.IO room state and browser state while Hangman is active: the guesser should receive only the pattern and guessed letters; `fullWord` should appear only after the round ends.
+- Play Hangman through a win and a loss with 5, 6, 7, and 8 miss settings; check that roles swap on replay and the session score updates.
+- Try correct, wrong, and repeated letters; repeated letters should show a friendly message without losing a life. Try the laptop keyboard as well as touch keys.
+- Try the on-screen keyboard on iOS Safari and Android Chrome; confirm letter keys remain easy to tap in portrait orientation.
+- Turn on whole-word guessing and letter hints; verify a wrong whole-word guess costs two lives and a hint costs one life, once per round.
+- Refresh both players mid-round and disconnect/rejoin; confirm the game resumes with the same roles and the Guesser still cannot see the word.
+- Inspect the Socket.IO room state and browser state while Hangman is active: the Guesser should receive only the pattern, word lengths, guessed letters, and hint; `fullWord` should appear only after the round ends. Verify error messages and hint responses also contain no word.
 - Cup Ordering and Poison Challenge checks are pending implementation.
