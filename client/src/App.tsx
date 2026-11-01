@@ -13,7 +13,11 @@ const makeToken = () => {
 const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
 export default function App() {
-  const socket = useMemo<ArcadeSocket>(() => io(import.meta.env.VITE_SERVER_URL || window.location.origin, { autoConnect: true }), []);
+  const socket = useMemo<ArcadeSocket>(() => io(import.meta.env.VITE_SERVER_URL || window.location.origin, {
+    autoConnect: true,
+    path: '/api/socket-io/socket.io',
+    transports: ['websocket'],
+  }), []);
   const [token] = useState(makeToken);
   const [name, setName] = useState(localStorage.getItem('little-arcade-name') ?? '');
   const [passcode, setPasscode] = useState('');
