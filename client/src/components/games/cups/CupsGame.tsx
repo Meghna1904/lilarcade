@@ -16,9 +16,24 @@ export function CupsGame({ game, self, players, socket }: { game: CupsView; self
   const { order, selected, selectOrSwap, moveCup } = useCupsGame(game);
   const winner = game.roundWinner ? players.find(player => player.id === game.roundWinner)?.name ?? 'Your person' : '';
   const [submitting, setSubmitting] = useState(false);
-  useEffect(() => setSubmitting(false), [game.phase, game.guessesUsed, game.round]);
+  useEffect(() => setSubmitting(false), [game.phase, game.guessesUsed, game.round, game.paused]);
+  useEffect(() => {
+    const releaseSubmit = () => setSubmitting(false);
+    socket.on('actionError', releaseSubmit);
+    socket.on('disconnect', releaseSubmit);
+    return () => {
+      socket.off('actionError', releaseSubmit);
+      socket.off('disconnect', releaseSubmit);
+    };
+  }, [socket]);
   const canAct = !game.paused && !ended && !submitting;
-  const submit = () => { setSubmitting(true); if (isArranger) socket.emit('cupsLockSecret', { order }); else socket.emit('cupsSubmitGuess', { order }); };
+  const submit = () => {
+    if (!canAct) return;
+    setSubmitting(true);
+    const ack = () => setSubmitting(false);
+    if (isArranger) socket.emit('cupsLockSecret', { order }, ack);
+    else socket.emit('cupsSubmitGuess', { order }, ack);
+  };
   return <section className="game-layout cups-game-layout"><div className="game-main"><div className="game-title-row"><button className="back-link" onClick={() => socket.emit('backToLobby')}>← Lobby</button><div className="eyebrow">A LITTLE LOGIC GAME · ROUND {game.round}</div><span className="round-chip">{game.format === 'bestOf3' ? `${game.matchScore[game.roles.arranger]} – ${game.matchScore[game.roles.guesser]}` : 'QUICK ROUND'}</span></div>
     <div className="panel cups-panel"><div className="role-line"><span className="role-pill">{isArranger ? '✎ ARRANGER' : '✧ GUESSER'}</span>{game.paused && <span className="paused-label">Paused while your person reconnects</span>}</div>
       {game.phase === 'setup' && isArranger && <div className="cups-stage"><h2>Hide the cups</h2><p className="muted">Make a secret order, then lock it in. Your person can’t peek.</p><SlotRow order={order} selected={selected} onSelect={selectOrSwap} onMove={moveCup} disabled={!canAct} label="Your secret order" /><SecretStrip secret={order} /><button className="button primary" disabled={!canAct} onClick={submit}>Lock it in <span>♡</span></button></div>}

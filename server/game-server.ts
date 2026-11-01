@@ -52,16 +52,21 @@ io.on('connection', socket => {
     publish(result.room);
   });
 
-  const action = (fn: (room: NonNullable<ReturnType<typeof roomForSocket>>, player: string) => string | null | void) => {
+  const action = (
+    fn: (room: NonNullable<ReturnType<typeof roomForSocket>>, player: string) => string | null | void,
+    ack?: (error: string | null) => void,
+  ) => {
     const room = roomForSocket(socket.id);
     const player = room && playerFor(room, socket.id);
     if (!room || !player) {
       socket.emit('actionError', 'Come back into your room first.');
+      ack?.('Come back into your room first.');
       return;
     }
     const error = fn(room, player.id);
     publish(room);
     if (error) socket.emit('actionError', error);
+    ack?.(error ?? null);
   };
 
   socket.on('startGame', ({ game, format, cups }) => action((r, p) => startGame(r, p, game, format, cups)));
@@ -69,11 +74,11 @@ io.on('connection', socket => {
   socket.on('guessLetter', ({ letter }) => action((r, p) => makeGuess(r, p, letter)));
   socket.on('hangmanReaction', ({ emoji }) => action((r, p) => reaction(r, p, emoji)));
   socket.on('hangmanAgain', () => action((r, p) => nextHangman(r, p)));
-  socket.on('cupsLockSecret', ({ order }) => action((r, p) => cupsLock(r, p, order)));
-  socket.on('cupsSubmitGuess', ({ order }) => action((r, p) => cupsGuess(r, p, order)));
-  socket.on('cupsHint', ({ slot }) => action((r, p) => cupsHint(r, p, slot)));
-  socket.on('cupsReaction', ({ emoji }) => action((r, p) => cupsReact(r, p, emoji)));
-  socket.on('cupsNextRound', () => action((r, p) => nextHangman(r, p)));
+  socket.on('cupsLockSecret', ({ order }, ack) => action((r, p) => cupsLock(r, p, order), ack));
+  socket.on('cupsSubmitGuess', ({ order }, ack) => action((r, p) => cupsGuess(r, p, order), ack));
+  socket.on('cupsHint', ({ slot }, ack) => action((r, p) => cupsHint(r, p, slot), ack));
+  socket.on('cupsReaction', ({ emoji }, ack) => action((r, p) => cupsReact(r, p, emoji), ack));
+  socket.on('cupsNextRound', ack => action((r, p) => nextHangman(r, p), ack));
   socket.on('backToLobby', () => action(r => backToLobby(r)));
   socket.on('disconnect', () => {
     const room = disconnect(socket.id);

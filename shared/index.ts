@@ -38,11 +38,11 @@ export type ClientToServerEvents = {
   guessLetter: (payload: { letter: string }) => void;
   hangmanReaction: (payload: { emoji: string }) => void;
   hangmanAgain: () => void;
-  cupsLockSecret: (payload: { order: CupId[] }) => void;
-  cupsSubmitGuess: (payload: { order: CupId[] }) => void;
-  cupsHint: (payload: { slot: number }) => void;
-  cupsReaction: (payload: { emoji: string }) => void;
-  cupsNextRound: () => void;
+  cupsLockSecret: (payload: { order: CupId[] }, ack?: (error: string | null) => void) => void;
+  cupsSubmitGuess: (payload: { order: CupId[] }, ack?: (error: string | null) => void) => void;
+  cupsHint: (payload: { slot: number }, ack?: (error: string | null) => void) => void;
+  cupsReaction: (payload: { emoji: string }, ack?: (error: string | null) => void) => void;
+  cupsNextRound: (ack?: (error: string | null) => void) => void;
   backToLobby: () => void;
 };
 export type ServerToClientEvents = { roomState: (state: RoomView) => void; joinError: (message: string) => void; actionError: (message: string) => void };
