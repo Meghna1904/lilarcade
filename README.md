@@ -38,6 +38,10 @@ The application keeps rooms and session scores in server memory. Restarting the 
 
 Edit `client/src/config.ts` to change the lobby greeting, footer name, and suggested names. Adjust the theme variables near the top of `client/src/style.css`.
 
+## Supabase client setup
+
+The project includes a browser Supabase client and an Express SSR cookie client for future data or auth features. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in the deployment environment. Vite is configured to expose those public variables during the client build; it also accepts the Vite-native `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` names. The root `.env.local` is ignored by Git for local development. The Express middleware refreshes an existing Supabase auth session when it sees Supabase auth cookies; the arcade's room passcode remains separate and no Supabase sign-in is required. The middleware must run on the Express host; a static-only client deployment does not run it.
+
 ## Manual checklist
 
 - Join with two names and one shared passcode; confirm both players appear in the same lobby.

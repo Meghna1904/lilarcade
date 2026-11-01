@@ -1,4 +1,5 @@
 import express from 'express';
+import dotenv from 'dotenv';
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -6,12 +7,16 @@ import { Server } from 'socket.io';
 import type { ClientToServerEvents, HangmanMove, ServerToClientEvents } from '@arcade/shared';
 import { configureSettings, handleMove } from './games/hangman.js';
 import { backToLobby, disconnect, enterRoom, lobbyView, makeGuess, nextHangman, playerFor, reaction, roomForSocket, setHangman, startGame } from './rooms.js';
+import { refreshSupabaseSession } from './utils/supabase/middleware.js';
+
+dotenv.config({ path: path.resolve(process.cwd(), '../.env.local') });
 
 const app = express();
 const httpServer = createServer(app);
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, { cors: { origin: process.env.CLIENT_ORIGIN?.split(',') ?? true } });
 const root = path.dirname(fileURLToPath(import.meta.url));
 const clientDist = path.resolve(root, '../../client/dist');
+app.use(refreshSupabaseSession);
 app.get('/health', (_req, res) => res.json({ ok: true }));
 app.use(express.static(clientDist));
 app.get('*', (_req, res) => res.sendFile(path.join(clientDist, 'index.html')));
