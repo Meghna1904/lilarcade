@@ -5,6 +5,15 @@ import { arcadeConfig } from './config';
 import { CupsGame, CupsLobbyCard } from './components/games/cups/CupsGame';
 
 type ArcadeSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
+const socketConnection = () => {
+  const configured = import.meta.env.VITE_SERVER_URL || window.location.origin;
+  const url = new URL(configured, window.location.origin);
+  const configuredPath = import.meta.env.VITE_SOCKET_PATH;
+  const path = configuredPath || (url.pathname !== '/' ? `${url.pathname.replace(/\/$/, '')}/socket.io` : '/socket.io');
+  url.pathname = '/';
+  url.search = '';
+  return { origin: url.toString().replace(/\/$/, ''), path };
+};
 const tokenKey = 'little-arcade-device';
 const makeToken = () => {
   const old = localStorage.getItem(tokenKey); if (old) return old;
@@ -13,11 +22,10 @@ const makeToken = () => {
 const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
 export default function App() {
-  const socket = useMemo<ArcadeSocket>(() => io(import.meta.env.VITE_SERVER_URL || window.location.origin, {
-    autoConnect: true,
-    path: '/api/socket-io/socket.io',
-    transports: ['websocket'],
-  }), []);
+  const socket = useMemo<ArcadeSocket>(() => {
+    const connection = socketConnection();
+    return io(connection.origin, { autoConnect: true, path: connection.path, transports: ['websocket'] });
+  }, []);
   const [token] = useState(makeToken);
   const [name, setName] = useState(localStorage.getItem('little-arcade-name') ?? '');
   const [passcode, setPasscode] = useState('');
