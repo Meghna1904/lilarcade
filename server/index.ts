@@ -7,6 +7,7 @@ import { Server } from 'socket.io';
 import type { ClientToServerEvents, ServerToClientEvents } from '@arcade/shared';
 import { backToLobby, disconnect, enterRoom, lobbyView, makeGuess, nextHangman, playerFor, reaction, roomForSocket, setHangman, startGame } from './rooms.js';
 import { refreshSupabaseSession } from './utils/supabase/middleware.js';
+import { isPlayerPersistenceConfigured, savePlayer } from './utils/supabase/admin.js';
 
 dotenv.config({ path: path.resolve(process.cwd(), '../.env.local') });
 
@@ -24,11 +25,19 @@ function publish(room: NonNullable<ReturnType<typeof roomForSocket>>) {
   for (const p of room.players) if (p.online) io.to(p.socketId).emit('roomState', lobbyView(room, p.id));
 }
 io.on('connection', socket => {
-  socket.on('enter', ({ name: rawName, passcode, token }) => {
+  socket.on('enter', async ({ name: rawName, passcode, token }) => {
     const name = rawName.trim().slice(0, 24);
     if (!name || !passcode.trim() || !/^[a-f0-9-]{20,80}$/i.test(token)) { socket.emit('joinError', 'Add your name and shared passcode to come in.'); return; }
-    const result = enterRoom(passcode.trim(), name, token, socket.id);
+    const cleanPasscode = passcode.trim();
+    const result = enterRoom(cleanPasscode, name, token, socket.id);
     if (result.error || !result.room) { socket.emit('joinError', result.error ?? 'Could not enter the room.'); return; }
+    if (isPlayerPersistenceConfigured()) {
+      try {
+        await savePlayer(name, cleanPasscode, token);
+      } catch (error) {
+        console.error('Could not save player identity to Supabase:', error);
+      }
+    }
     publish(result.room);
   });
   const action = (fn: (room: NonNullable<ReturnType<typeof roomForSocket>>, player: string) => string | null | void) => {

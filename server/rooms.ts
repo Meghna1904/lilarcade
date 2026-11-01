@@ -1,11 +1,16 @@
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import type { GameId, MatchFormat, RoomView, Scoreboard } from '@arcade/shared';
 import { createHangman, guess, setWord, viewFor, type HangmanGame } from './games/hangman.js';
 type Player = { id: string; name: string; online: boolean; socketId: string };
 type Room = { key: string; players: Player[]; game: HangmanGame | null; scoreboard: Scoreboard };
 const rooms = new Map<string, Room>();
 const emptyScore = (): Scoreboard => ({ hangman: {}, cups: {}, poison: {} });
-export const hashPasscode = (passcode: string) => createHash('sha256').update(passcode).digest('hex');
+export const hashPasscode = (passcode: string) => {
+  const pepper = process.env.ARCADE_PASSCODE_PEPPER;
+  return pepper
+    ? createHmac('sha256', pepper).update(`room:${passcode}`).digest('hex')
+    : createHash('sha256').update(passcode).digest('hex');
+};
 export function enterRoom(passcode: string, name: string, token: string, socketId: string): { room?: Room; error?: string; id?: string } {
   const key = hashPasscode(passcode); let room = rooms.get(key);
   if (!room) { room = { key, players: [], game: null, scoreboard: emptyScore() }; rooms.set(key, room); }
