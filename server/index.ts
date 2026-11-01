@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { Server } from 'socket.io';
 import type { ClientToServerEvents, ServerToClientEvents } from '@arcade/shared';
-import { backToLobby, disconnect, enterRoom, lobbyView, makeGuess, nextHangman, playerFor, reaction, roomForSocket, setHangman, startGame } from './rooms.js';
+import { backToLobby, cupsGuess, cupsHint, cupsLock, cupsReact, disconnect, enterRoom, lobbyView, makeGuess, nextHangman, playerFor, reaction, roomForSocket, setHangman, startGame } from './rooms.js';
 import { refreshSupabaseSession } from './utils/supabase/middleware.js';
 import { isPlayerPersistenceConfigured, savePlayer } from './utils/supabase/admin.js';
 
@@ -45,11 +45,16 @@ io.on('connection', socket => {
     if (!room || !player) { socket.emit('actionError', 'Come back into your room first.'); return; }
     const error = fn(room, player.id); publish(room); if (error) socket.emit('actionError', error);
   };
-  socket.on('startGame', ({ game, format }) => action((r,p) => startGame(r,p,game,format)));
+  socket.on('startGame', ({ game, format, cups }) => action((r,p) => startGame(r,p,game,format,cups)));
   socket.on('setHangmanWord', ({ word, hint }) => action((r,p) => setHangman(r,p,word,hint)));
   socket.on('guessLetter', ({ letter }) => action((r,p) => makeGuess(r,p,letter)));
   socket.on('hangmanReaction', ({ emoji }) => action((r,p) => reaction(r,p,emoji)));
   socket.on('hangmanAgain', () => action((r,p) => nextHangman(r,p)));
+  socket.on('cupsLockSecret', ({ order }) => action((r,p) => cupsLock(r,p,order)));
+  socket.on('cupsSubmitGuess', ({ order }) => action((r,p) => cupsGuess(r,p,order)));
+  socket.on('cupsHint', ({ slot }) => action((r,p) => cupsHint(r,p,slot)));
+  socket.on('cupsReaction', ({ emoji }) => action((r,p) => cupsReact(r,p,emoji)));
+  socket.on('cupsNextRound', () => action((r,p) => nextHangman(r,p)));
   socket.on('backToLobby', () => action(r => backToLobby(r)));
   socket.on('disconnect', () => { const room = disconnect(socket.id); if (room) publish(room); });
 });

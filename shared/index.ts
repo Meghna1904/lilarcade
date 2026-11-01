@@ -1,5 +1,23 @@
 export type GameId = 'hangman' | 'cups' | 'poison';
 export type MatchFormat = 'quick' | 'bestOf3';
+export type CupId = 'coral' | 'sky' | 'butter' | 'mint' | 'lavender' | 'peach';
+export const CUP_IDS: CupId[] = ['coral', 'sky', 'butter', 'mint', 'lavender', 'peach'];
+export type CupsPhase = 'setup' | 'guessing' | 'roundOver' | 'matchOver';
+export type CupsSettings = { cupCount: number; maxGuesses: number; format: MatchFormat; hintEnabled: boolean };
+export type CupsGuess = { order: CupId[]; correct: number; number: number };
+export type CupsView = {
+  game: 'cups'; phase: CupsPhase; roles: { arranger: string; guesser: string }; cups: CupId[];
+  secret?: CupId[]; guesses: CupsGuess[]; maxGuesses: number; guessesUsed: number; guessesLeft: number;
+  round: number; format: MatchFormat; hintEnabled: boolean; hintUsed: boolean;
+  hint?: { slot: number; cup: CupId }; matchScore: Record<string, number>; roundWinner?: string;
+  outcome?: 'win' | 'loss'; paused: boolean; lastReaction?: { player: string; emoji: string; at: number };
+};
+export type CupsMove =
+  | { type: 'cups:lockSecret'; order: CupId[] }
+  | { type: 'cups:submitGuess'; order: CupId[] }
+  | { type: 'cups:nextRound' }
+  | { type: 'cups:backToLobby' }
+  | { type: 'cups:reaction'; emoji: string };
 export type PlayerSummary = { id: string; name: string; online: boolean };
 export type Scoreboard = Record<GameId, Record<string, number>>;
 export type HangmanView = {
@@ -10,16 +28,21 @@ export type HangmanView = {
   paused: boolean; lastReaction?: { player: string; emoji: string; at: number };
 };
 export type RoomView = {
-  self: string; players: PlayerSummary[]; status: string; game: HangmanView | null;
+  self: string; players: PlayerSummary[]; status: string; game: HangmanView | CupsView | null;
   scoreboard: Scoreboard; error?: string;
 };
 export type ClientToServerEvents = {
   enter: (payload: { name: string; passcode: string; token: string }) => void;
-  startGame: (payload: { game: GameId; format: MatchFormat }) => void;
+  startGame: (payload: { game: GameId; format: MatchFormat; cups?: Omit<CupsSettings, 'format'> }) => void;
   setHangmanWord: (payload: { word: string; hint: string }) => void;
   guessLetter: (payload: { letter: string }) => void;
   hangmanReaction: (payload: { emoji: string }) => void;
   hangmanAgain: () => void;
+  cupsLockSecret: (payload: { order: CupId[] }) => void;
+  cupsSubmitGuess: (payload: { order: CupId[] }) => void;
+  cupsHint: (payload: { slot: number }) => void;
+  cupsReaction: (payload: { emoji: string }) => void;
+  cupsNextRound: () => void;
   backToLobby: () => void;
 };
 export type ServerToClientEvents = { roomState: (state: RoomView) => void; joinError: (message: string) => void; actionError: (message: string) => void };

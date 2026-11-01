@@ -61,4 +61,5 @@ The project includes a browser Supabase client and an Express SSR cookie client 
 - Play Hangman through a win and a six-mistake loss; check that roles swap on replay and the session score updates.
 - Refresh both players mid-round and disconnect/rejoin; confirm the game resumes with the same roles and the Guesser still cannot see the word.
 - Inspect Socket.IO room state while Hangman is active: the Guesser should receive only the pattern and guessed letters; `fullWord` should appear only after the round ends.
-- Cup Ordering and Poison Challenge checks are pending implementation.
+- Cup Ordering: lock a secret, make a wrong guess, repeat a guess, solve, run out of guesses, use a hint, swap roles, play Best of 3, refresh mid-round, and disconnect/rejoin. Test both tap-to-swap and pointer dragging on mobile Safari and Android Chrome.
+- Poison Challenge checks are pending implementation.

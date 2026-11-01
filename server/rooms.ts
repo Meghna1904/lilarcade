@@ -1,8 +1,10 @@
 import { createHash, createHmac } from 'node:crypto';
-import type { GameId, MatchFormat, RoomView, Scoreboard } from '@arcade/shared';
+import type { CupId, GameId, MatchFormat, RoomView, Scoreboard, CupsSettings } from '@arcade/shared';
 import { createHangman, guess, setWord, viewFor, type HangmanGame } from './games/hangman.js';
+import { createCups, getViewFor as cupsViewFor, lockSecret, reaction as cupsReaction, submitGuess, useHint, validSettings, type CupsGame } from './games/cups.js';
 type Player = { id: string; name: string; online: boolean; socketId: string };
-type Room = { key: string; players: Player[]; game: HangmanGame | null; scoreboard: Scoreboard };
+type Game = HangmanGame | CupsGame;
+type Room = { key: string; players: Player[]; game: Game | null; scoreboard: Scoreboard };
 const rooms = new Map<string, Room>();
 const emptyScore = (): Scoreboard => ({ hangman: {}, cups: {}, poison: {} });
 export const hashPasscode = (passcode: string) => {
@@ -34,30 +36,64 @@ export function playerFor(room: Room, socketId: string) { return room.players.fi
 export function lobbyView(room: Room, self: string, error?: string): RoomView {
   const players = room.players.map(({ id, name, online }) => ({ id, name, online }));
   const other = room.players.find(p => p.id !== self);
-  return { self, players, status: !other ? 'Waiting for your person…' : other.online ? `${other.name} is here 💗` : `${other.name} disconnected, waiting for them to come back`, game: room.game ? viewFor(room.game, self) : null, scoreboard: room.scoreboard, ...(error ? { error } : {}) };
+  const gameView = room.game ? 'cups' in room.game ? cupsViewFor(room.game, self) : viewFor(room.game, self) : null;
+  return { self, players, status: !other ? 'Waiting for your person…' : other.online ? `${other.name} is here 💗` : `${other.name} disconnected, waiting for them to come back`, game: gameView, scoreboard: room.scoreboard, ...(error ? { error } : {}) };
 }
-export function startGame(room: Room, player: string, game: GameId, format: MatchFormat) {
+export function startGame(room: Room, player: string, game: GameId, format: MatchFormat, cups?: Omit<CupsSettings, 'format'>) {
   if (room.players.length !== 2 || room.players.some(p => !p.online)) return 'Wait until both of you are here.';
   if (room.game && room.game.phase !== 'matchOver') return 'A game is already in progress.';
-  if (game !== 'hangman') return 'That game is coming soon.';
-  const setter = player;
-  room.game = createHangman(setter, room.players.find(p => p.id !== setter)!.id, format);
-  void player;
+  const other = room.players.find(p => p.id !== player)!.id;
+  if (game === 'hangman') room.game = createHangman(player, other, format);
+  else if (game === 'cups') {
+    const settings = { cupCount: cups?.cupCount ?? 5, maxGuesses: cups?.maxGuesses ?? 8, hintEnabled: cups?.hintEnabled ?? false, format };
+    if (!validSettings(settings)) return 'Choose 4–6 cups and 6–12 guesses.';
+    room.game = createCups(player, other, format, settings);
+  }
+  else return 'That game is coming soon.';
   return null;
 }
-export function setHangman(room: Room, player: string, word: string, hint: string) { return room.game ? setWord(room.game, player, word, hint) : 'Start a game first.'; }
+export function setHangman(room: Room, player: string, word: string, hint: string) {
+  return room.game && 'word' in room.game ? setWord(room.game, player, word, hint) : 'Start a Hangman game first.';
+}
 export function makeGuess(room: Room, player: string, letter: string) {
-  const game = room.game; if (!game) return 'Start a game first.';
+  const game = room.game; if (!game || !('word' in game)) return 'Start a Hangman game first.';
   const before = game.matchScore[game.setter] + game.matchScore[game.guesser];
   const error = guess(game, player, letter);
   if (!error && before !== game.matchScore[game.setter] + game.matchScore[game.guesser]) room.scoreboard.hangman[game.roundWinner!] = (room.scoreboard.hangman[game.roundWinner!] ?? 0) + 1;
   return error;
 }
 export function reaction(room: Room, player: string, emoji: string) { if (room.game?.phase === 'playing' && ['😂','😬','😭','🎉'].includes(emoji)) room.game.lastReaction = { player, emoji, at: Date.now() }; }
+export function cupsLock(room: Room, player: string, order: CupId[]) {
+  return room.game && 'cups' in room.game ? lockSecret(room.game, player, order) : 'Start a Cup Ordering game first.';
+}
+export function cupsGuess(room: Room, player: string, order: CupId[]) {
+  const game = room.game;
+  if (!game || !('cups' in game)) return 'Start a Cup Ordering game first.';
+  const before = game.phase;
+  const error = submitGuess(game, player, order);
+  if (!error && before === 'guessing' && game.phase !== 'guessing' && game.roundWinner) {
+    room.scoreboard.cups[game.roundWinner] = (room.scoreboard.cups[game.roundWinner] ?? 0) + 1;
+  }
+  return error;
+}
+export function cupsHint(room: Room, player: string, slot: number) {
+  return room.game && 'cups' in room.game ? useHint(room.game, player, slot) : 'Start a Cup Ordering game first.';
+}
+export function cupsReact(room: Room, player: string, emoji: string) {
+  if (room.game && 'cups' in room.game) cupsReaction(room.game, player, emoji);
+}
 export function nextHangman(room: Room, player: string) {
-  const g = room.game; if (!g || (g.phase !== 'roundOver' && g.phase !== 'matchOver')) return 'This round is still in progress.';
-  if (player !== g.guesser && player !== g.setter) return 'You are not in this game.';
+  const g = room.game;
+  if (!g || (g.phase !== 'roundOver' && g.phase !== 'matchOver')) return 'This round is still in progress.';
+  if ('cups' in g) {
+    if (player !== g.guesser && player !== g.arranger) return 'You are not in this game.';
+  } else if (player !== g.guesser && player !== g.setter) return 'You are not in this game.';
   if (room.players.some(p => !p.online)) return 'Wait until your person is back to play again.';
+  if ('cups' in g) {
+    if (g.phase === 'matchOver') room.game = createCups(g.guesser, g.arranger, g.format, { cupCount: g.cups.length, maxGuesses: g.maxGuesses, hintEnabled: g.hintEnabled });
+    else room.game = createCups(g.guesser, g.arranger, g.format, { cupCount: g.cups.length, maxGuesses: g.maxGuesses, hintEnabled: g.hintEnabled }, g.round + 1, g.matchScore);
+    return null;
+  }
   if (g.phase === 'matchOver') { room.game = createHangman(g.guesser, g.setter, g.format); return null; }
   room.game = createHangman(g.guesser, g.setter, g.format, g.round + 1, g.matchScore); return null;
 }
