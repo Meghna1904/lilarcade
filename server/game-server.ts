@@ -16,7 +16,7 @@ import { isPlayerPersistenceConfigured, savePlayer } from './utils/supabase/admi
 
 dotenv.config({ path: path.resolve(process.cwd(), '../.env.local') });
 
-const app = express();
+export const app = express();
 export const httpServer = createServer(app);
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
   path: '/socket.io',
