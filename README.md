@@ -30,7 +30,7 @@ Deploy as one Node.js web service on a host that supports persistent WebSocket c
 - Start command: `npm start`
 - Health endpoint: `/health`
 
-The application keeps rooms and session scores in server memory. Restarting the service clears them. For separate client and server origins, set `CLIENT_ORIGIN` to a comma-separated list of permitted client origins and `VITE_SERVER_URL` at client build time to the server URL. When the server is deployed as a Vercel Function, use `VITE_SERVER_URL=https://your-server.vercel.app/api/socket-io`; the client derives the required `/api/socket-io/socket.io` WebSocket path automatically. Vercel project settings must use Node.js runtime support for the `api/socket-io.ts` function.
+The application keeps rooms and session scores in server memory. Restarting the service clears them. For separate client and server origins, set `CLIENT_ORIGIN` to a comma-separated list of permitted client origins and `VITE_SERVER_URL` at client build time to the server origin. Socket.IO uses its standard `/socket.io` path; the server must support persistent WebSocket connections.
 
 ## Personalize
 

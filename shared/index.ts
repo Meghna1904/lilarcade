@@ -1,5 +1,5 @@
 export type GameId = 'hangman' | 'cups' | 'poison';
-export type MatchFormat = 'quick' | 'bestOf3';
+export type MatchFormat = 'quick' | 'bestOf3' | 'bestOf5';
 export type CupId = 'coral' | 'sky' | 'butter' | 'mint' | 'lavender' | 'peach';
 export const CUP_IDS: CupId[] = ['coral', 'sky', 'butter', 'mint', 'lavender', 'peach'];
 export type CupsPhase = 'setup' | 'guessing' | 'roundOver' | 'matchOver';
@@ -28,17 +28,18 @@ export type HangmanView = {
   paused: boolean; lastReaction?: { player: string; emoji: string; at: number };
 };
 export type PoisonPhase = 'setup' | 'playing' | 'roundOver' | 'matchOver';
-export type RoundEndReason = 'tapped' | 'forced' | 'forfeit';
-export type PoisonSettings = { gridSize: 3 | 4 | 5; format: MatchFormat; timerEnabled: boolean; confirmMode: boolean; warmCold: boolean };
+export type PoisonGridSize = 3 | 4 | 5 | 6 | 7 | 8 | 9;
+export type RoundEndReason = 'tapped' | 'forced' | 'forfeit' | 'sweetTie';
+export type PoisonSettings = { gridSize: 3 | 4 | 5; format: MatchFormat; timerEnabled: boolean; confirmMode: boolean; warmCold: boolean; tieMode: 'replay' | 'draw' };
 export type RevealedTile = { index: number; eatenBy: string; warm?: boolean };
 export type PoisonView = {
-  game: 'poison'; phase: PoisonPhase; gridSize: 3 | 4 | 5;
+  game: 'poison'; phase: PoisonPhase; gridSize: PoisonGridSize;
   roles: { playerA: string; playerB: string };
   round: number; format: MatchFormat; matchScore: Record<string, number>;
   settings: PoisonSettings; paused: boolean; revealed: RevealedTile[];
-  myPick?: number; myLocked?: boolean; opponentLocked?: boolean; sameTileRejectedAt?: number;
-  myPoison?: number; currentTurn?: string; turnNumber?: number; turnDeadline?: number;
-  opponentPoison?: number; loser?: string; roundWinner?: string; endReason?: RoundEndReason;
+  myPick?: number[]; myLocked?: boolean; opponentLocked?: boolean;
+  myPoison?: number[]; currentTurn?: string; turnNumber?: number; turnDeadline?: number;
+  opponentPoison?: number[]; hitTile?: number; loser?: string; roundWinner?: string; endReason?: RoundEndReason;
   lastReaction?: { player: string; emoji: string; at: number };
 };
 export type PoisonMove =
@@ -49,7 +50,7 @@ export type PoisonMove =
   | { type: 'poison:nextRound' };
 export type RoomView = {
   self: string; players: PlayerSummary[]; status: string; game: HangmanView | CupsView | PoisonView | null;
-  scoreboard: Scoreboard; error?: string;
+  scoreboard: Scoreboard; sameSweetMoments: number; error?: string;
 };
 export type ClientToServerEvents = {
   enter: (payload: { name: string; passcode: string; token: string }) => void;

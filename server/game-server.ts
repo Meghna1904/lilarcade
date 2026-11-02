@@ -6,7 +6,7 @@ import path from 'node:path';
 import { Server } from 'socket.io';
 import type { ClientToServerEvents, ServerToClientEvents } from '@arcade/shared';
 import { backToLobby, cupsGuess, cupsHint, cupsLock, cupsReact, disconnect, enterRoom, lobbyView, makeGuess, nextHangman, playerFor, poisonForcedLoss, poisonLock, poisonPick, poisonReact, poisonTap, poisonTimeout, nextPoisonRound, reaction, roomForSocket, setHangman, startGame } from './rooms.js';
-import { checkForcedLoss } from './games/poison.js';
+import { checkForcedLoss, legalTiles } from './games/poison.js';
 import { refreshSupabaseSession } from './utils/supabase/middleware.js';
 import { isPlayerPersistenceConfigured, savePlayer } from './utils/supabase/admin.js';
 
@@ -15,7 +15,7 @@ dotenv.config({ path: path.resolve(process.cwd(), '../.env.local') });
 const app = express();
 export const httpServer = createServer(app);
 const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
-  path: '/api/socket-io/socket.io',
+  path: '/socket.io',
   cors: { origin: process.env.CLIENT_ORIGIN?.split(',') ?? true },
 });
 
@@ -40,6 +40,11 @@ function schedulePoisonTimer(room: NonNullable<ReturnType<typeof roomForSocket>>
   if (game.paused) {
     if (game.turnDeadline > 0) game.timerRemaining = Math.max(1, game.turnDeadline - Date.now());
     game.turnDeadline = 0;
+    return;
+  }
+  if (legalTiles(game, game.currentTurn).length === 0) {
+    poisonTimeout(room);
+    publish(room);
     return;
   }
   const forced = checkForcedLoss(game);

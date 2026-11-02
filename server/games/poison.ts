@@ -1,22 +1,21 @@
 import { randomBytes } from 'node:crypto';
-import type { MatchFormat, PoisonPhase, PoisonSettings, PoisonView, RevealedTile, RoundEndReason } from '@arcade/shared';
+import type { MatchFormat, PoisonGridSize, PoisonPhase, PoisonSettings, PoisonView, RevealedTile, RoundEndReason } from '@arcade/shared';
 
 // ─── Internal game state (server only) ───────────────────────────────────────
 
 export type PoisonGame = {
   phase: PoisonPhase;
-  gridSize: 3 | 4 | 5;
+  gridSize: PoisonGridSize;
   playerA: string;
   playerB: string;
   // Setup state
-  pickedA: number;        // -1 = nothing picked
-  pickedB: number;
+  pickedA: number[];
+  pickedB: number[];
   lockedA: boolean;
   lockedB: boolean;
-  sameTileRejectedAt: number; // timestamp of last same-tile rejection (0 = never)
   // Play state  ─ poisonA is deadly for B, poisonB is deadly for A
-  poisonA: number;        // -1 until both players lock
-  poisonB: number;
+  poisonA: number[];      // each player's poison positions; deadly to the opponent
+  poisonB: number[];
   revealed: RevealedTile[];
   currentTurn: string;
   turnNumber: number;
@@ -26,6 +25,7 @@ export type PoisonGame = {
   roundWinner: string | undefined;
   loser: string | undefined;
   endReason: RoundEndReason | undefined;
+  hitTile: number | undefined;
   // Match state
   round: number;
   starter: string;        // who goes first this round (alternates each round)
@@ -53,29 +53,39 @@ function validGridSize(n: unknown): 3 | 4 | 5 {
 }
 
 /** True if opponentPoison is within one Chebyshev step of tile (includes diagonals). */
-function isWarm(tile: number, opponentPoison: number, gridSize: number): boolean {
+function isWarm(tile: number, opponentPoisons: number[], gridSize: number): boolean {
   const r = Math.floor(tile / gridSize),          c = tile % gridSize;
-  const pr = Math.floor(opponentPoison / gridSize), pc = opponentPoison % gridSize;
-  return Math.abs(r - pr) <= 1 && Math.abs(c - pc) <= 1 && tile !== opponentPoison;
+  return opponentPoisons.some(poison => {
+    const pr = Math.floor(poison / gridSize), pc = poison % gridSize;
+    return Math.abs(r - pr) <= 1 && Math.abs(c - pc) <= 1 && tile !== poison;
+  });
 }
 
 function other(g: PoisonGame, player: string): string {
   return player === g.playerA ? g.playerB : g.playerA;
 }
-function myPoison(g: PoisonGame, player: string): number {
+function myPoison(g: PoisonGame, player: string): number[] {
   return player === g.playerA ? g.poisonA : g.poisonB;
 }
-function opponentPoison(g: PoisonGame, player: string): number {
+function opponentPoison(g: PoisonGame, player: string): number[] {
   return player === g.playerA ? g.poisonB : g.poisonA;
 }
 
 function endRound(g: PoisonGame): void {
+  if (g.endReason === 'sweetTie') {
+    const replayTie = g.settings.tieMode === 'replay';
+    const bestOfThreeOver = g.format === 'bestOf3' && !replayTie && g.round >= 3;
+    const bestOfFiveOver = g.format === 'bestOf5' && !replayTie && g.round >= 5;
+    g.phase = g.format === 'quick' || bestOfThreeOver || bestOfFiveOver ? 'matchOver' : 'roundOver';
+    g.turnDeadline = 0;
+    g.timerRemaining = 0;
+    return;
+  }
   if (!g.roundWinner) return;
   g.matchScore[g.roundWinner] = (g.matchScore[g.roundWinner] ?? 0) + 1;
-  g.phase =
-    g.format === 'quick' || g.round >= 3 || g.matchScore[g.roundWinner] >= 2
-      ? 'matchOver'
-      : 'roundOver';
+  const bestOfThreeOver = g.format === 'bestOf3' && (g.round >= 3 || g.matchScore[g.roundWinner] >= 2);
+  const bestOfFiveOver = g.format === 'bestOf5' && (g.round >= 5 || g.matchScore[g.roundWinner] >= 3);
+  g.phase = g.format === 'quick' || bestOfThreeOver || bestOfFiveOver || (g.format !== 'bestOf5' && g.format !== 'bestOf3' && g.round >= 5) ? 'matchOver' : 'roundOver';
   g.turnDeadline = 0;
   g.timerRemaining = 0;
 }
@@ -91,22 +101,22 @@ export function createPoison(
   score: Record<string, number> = {},
   starter?: string,
 ): PoisonGame {
-  const gs = validGridSize(settings.gridSize);
+  const baseGridSize = validGridSize(settings.gridSize);
+  const gs = Math.min(9, baseGridSize + round - 1) as PoisonGridSize;
   const st = starter ?? (secureRandInt(2) === 0 ? playerA : playerB);
   return {
     phase: 'setup',
     gridSize: gs,
     playerA, playerB,
-    pickedA: -1, pickedB: -1,
+    pickedA: [], pickedB: [],
     lockedA: false, lockedB: false,
-    sameTileRejectedAt: 0,
-    poisonA: -1, poisonB: -1,
+    poisonA: [], poisonB: [],
     revealed: [],
     currentTurn: st,
     turnNumber: 1,
     turnDeadline: 0,
     timerRemaining: 0,
-    roundWinner: undefined, loser: undefined, endReason: undefined,
+    roundWinner: undefined, loser: undefined, endReason: undefined, hitTile: undefined,
     round,
     starter: st,
     matchScore: { ...score, [playerA]: score[playerA] ?? 0, [playerB]: score[playerB] ?? 0 },
@@ -132,19 +142,20 @@ export function legalTiles(g: PoisonGame, player: string): number[] {
   const own = myPoison(g, player);
   const total = g.gridSize * g.gridSize;
   const revSet = new Set(g.revealed.map(r => r.index));
-  return Array.from({ length: total }, (_, i) => i).filter(i => !revSet.has(i) && i !== own);
+  return Array.from({ length: total }, (_, i) => i).filter(i => !revSet.has(i) && !own.includes(i));
 }
 
-/** True when the current player's only legal tile is the opponent's poison. */
+/** True when every remaining legal tile is one of the opponent's poison candies. */
 export function checkForcedLoss(g: PoisonGame): boolean {
   if (g.phase !== 'playing') return false;
   const legal = legalTiles(g, g.currentTurn);
-  return legal.length === 1 && legal[0] === opponentPoison(g, g.currentTurn);
+  const fatal = opponentPoison(g, g.currentTurn);
+  return legal.length > 0 && legal.every(tile => fatal.includes(tile));
 }
 
 // ─── Moves ────────────────────────────────────────────────────────────────────
 
-/** Setup phase: select (or change) which tile you want to poison. */
+/** Setup phase: toggle a poison tile in the player's private pick set. */
 export function pickTile(g: PoisonGame, player: string, tile: number): string | null {
   if (g.phase !== 'setup') return 'The picking phase is over.';
   if (g.paused) return 'Wait until your person is back.';
@@ -153,7 +164,13 @@ export function pickTile(g: PoisonGame, player: string, tile: number): string | 
   if (isA ? g.lockedA : g.lockedB) return 'You have already locked in your choice.';
   const total = g.gridSize * g.gridSize;
   if (!Number.isInteger(tile) || tile < 0 || tile >= total) return 'That tile is not on the tray.';
-  if (isA) g.pickedA = tile; else g.pickedB = tile;
+  const picks = isA ? g.pickedA : g.pickedB;
+  const at = picks.indexOf(tile);
+  if (at >= 0) picks.splice(at, 1);
+  else {
+    if (picks.length >= g.round) return `Choose up to ${g.round} candies.`;
+    picks.push(tile);
+  }
   return null;
 }
 
@@ -163,20 +180,14 @@ export function lockPick(g: PoisonGame, player: string): string | null {
   if (g.paused) return 'Wait until your person is back.';
   if (player !== g.playerA && player !== g.playerB) return 'You are not in this game.';
   const isA = player === g.playerA;
-  if ((isA ? g.pickedA : g.pickedB) === -1) return 'Tap a tile to mark your choice first.';
+  const picks = isA ? g.pickedA : g.pickedB;
+  if (picks.length !== g.round) return `Pick ${g.round} candies before locking in.`;
   if (isA ? g.lockedA : g.lockedB) return 'You have already locked in your choice.';
   if (isA) g.lockedA = true; else g.lockedB = true;
   if (g.lockedA && g.lockedB) {
-    if (g.pickedA === g.pickedB) {
-      // Same-tile rule: reset both locks and picks, never skip this check.
-      g.lockedA = false; g.lockedB = false;
-      g.pickedA = -1; g.pickedB = -1;
-      g.sameTileRejectedAt = Date.now();
-      return null; // not an error — both players get the same-tile message via getViewFor
-    }
     // Transition to playing phase.
-    g.poisonA = g.pickedA;
-    g.poisonB = g.pickedB;
+    g.poisonA = [...g.pickedA];
+    g.poisonB = [...g.pickedB];
     g.phase = 'playing';
     g.turnNumber = 1;
     // turnDeadline will be set by the server once the timer starts
@@ -193,15 +204,16 @@ export function tapTile(g: PoisonGame, player: string, tile: number, turnNumber:
   const total = g.gridSize * g.gridSize;
   if (!Number.isInteger(tile) || tile < 0 || tile >= total) return 'That tile is not on the tray.';
   if (g.revealed.some(r => r.index === tile)) return 'That tile has already been eaten.';
-  if (tile === myPoison(g, player)) return 'You cannot eat your own tile.';
+  if (myPoison(g, player).includes(tile)) return 'You cannot eat your own tile.';
   // Advance turn counter first — prevents double-processing on any path below.
   g.turnNumber++;
   g.turnDeadline = 0;
-  if (tile === opponentPoison(g, player)) {
+  if (opponentPoison(g, player).includes(tile)) {
     // Player ate the opponent's poison → player loses.
     g.loser = player;
     g.roundWinner = other(g, player);
     g.endReason = 'tapped';
+    g.hitTile = tile;
     endRound(g);
     return null;
   }
@@ -210,6 +222,13 @@ export function tapTile(g: PoisonGame, player: string, tile: number, turnNumber:
   const warm = g.settings.warmCold ? isWarm(tile, opp, g.gridSize) : undefined;
   g.revealed.push({ index: tile, eatenBy: player, ...(g.settings.warmCold ? { warm } : {}) });
   g.currentTurn = other(g, player);
+  if (legalTiles(g, g.currentTurn).length === 0) {
+    g.endReason = 'sweetTie';
+    g.roundWinner = undefined;
+    g.loser = undefined;
+    g.hitTile = undefined;
+    endRound(g);
+  }
   return null;
 }
 
@@ -220,7 +239,14 @@ export function tapTile(g: PoisonGame, player: string, tile: number, turnNumber:
 export function timeoutTurn(g: PoisonGame): string | null {
   if (g.phase !== 'playing') return 'No active turn to time out.';
   const legal = legalTiles(g, g.currentTurn);
-  if (legal.length === 0) return 'No legal tiles available.';
+  if (legal.length === 0) {
+    g.endReason = 'sweetTie';
+    g.roundWinner = undefined;
+    g.loser = undefined;
+    g.hitTile = undefined;
+    endRound(g);
+    return null;
+  }
   const tile = legal[secureRandInt(legal.length)];
   return tapTile(g, g.currentTurn, tile, g.turnNumber);
 }
@@ -248,7 +274,8 @@ export function validPoisonSettings(s: unknown): s is Omit<PoisonSettings, 'form
   return [3, 4, 5].includes(Number(o.gridSize)) &&
     typeof o.timerEnabled === 'boolean' &&
     typeof o.confirmMode === 'boolean' &&
-    typeof o.warmCold === 'boolean';
+    typeof o.warmCold === 'boolean' &&
+    (o.tieMode === 'replay' || o.tieMode === 'draw');
 }
 
 // ─── Views ────────────────────────────────────────────────────────────────────
@@ -285,7 +312,6 @@ export function getViewFor(g: PoisonGame, player: string): PoisonView {
       myPick: isA ? g.pickedA : g.pickedB,
       myLocked: isA ? g.lockedA : g.lockedB,
       opponentLocked: isA ? g.lockedB : g.lockedA,
-      ...(g.sameTileRejectedAt > 0 ? { sameTileRejectedAt: g.sameTileRejectedAt } : {}),
     };
   }
 
@@ -294,9 +320,10 @@ export function getViewFor(g: PoisonGame, player: string): PoisonView {
       ...base,
       myPoison: myPois,
       opponentPoison: oppPois,   // ← only disclosed at round end
-      loser: g.loser,
-      roundWinner: g.roundWinner,
+      ...(g.loser ? { loser: g.loser } : {}),
+      ...(g.roundWinner ? { roundWinner: g.roundWinner } : {}),
       endReason: g.endReason,
+      hitTile: g.hitTile,
     };
   }
 

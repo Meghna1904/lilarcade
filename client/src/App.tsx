@@ -6,15 +6,6 @@ import { CupsGame, CupsLobbyCard } from './components/games/cups/CupsGame';
 import { PoisonGame, PoisonLobbyCard } from './components/games/poison/PoisonGame';
 
 type ArcadeSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
-const socketConnection = () => {
-  const configured = import.meta.env.VITE_SERVER_URL || window.location.origin;
-  const url = new URL(configured, window.location.origin);
-  const configuredPath = import.meta.env.VITE_SOCKET_PATH;
-  const path = configuredPath || (url.pathname !== '/' ? `${url.pathname.replace(/\/$/, '')}/socket.io` : '/socket.io');
-  url.pathname = '/';
-  url.search = '';
-  return { origin: url.toString().replace(/\/$/, ''), path };
-};
 const tokenKey = 'little-arcade-device';
 const makeToken = () => {
   const old = localStorage.getItem(tokenKey); if (old) return old;
@@ -24,8 +15,7 @@ const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
 export default function App() {
   const socket = useMemo<ArcadeSocket>(() => {
-    const connection = socketConnection();
-    return io(connection.origin, { autoConnect: true, path: connection.path, transports: ['websocket'] });
+    return io(import.meta.env.VITE_SERVER_URL || undefined);
   }, []);
   const [token] = useState(makeToken);
   const [name, setName] = useState(localStorage.getItem('little-arcade-name') ?? '');
@@ -81,7 +71,7 @@ export default function App() {
         <div className="couple-card panel">{room.players.map((p, i) => <div className="person" key={p.id}><div className={`avatar avatar-${i}`}>{p.name[0]?.toUpperCase()}</div><div><b>{p.name}</b><small><i className={p.online ? 'dot online' : 'dot'} />{p.online ? 'here with you' : 'away for a moment'}</small></div></div>)}{!other && <div className="waiting-note">{room.status}</div>}</div>
       </section>
       {actionError && <div className="toast" role="status">{actionError}</div>}
-      {game?.game === 'hangman' ? <HangmanScreen game={game} self={room.self} players={room.players} socket={socket} word={word} setWord={setWord} hint={hint} setHint={setHint} /> : game?.game === 'cups' ? <CupsGame game={game} self={room.self} players={room.players} socket={socket} /> : game?.game === 'poison' ? <PoisonGame game={game} self={room.self} players={room.players} socket={socket} /> : <section className="lobby-grid">
+      {game?.game === 'hangman' ? <HangmanScreen game={game} self={room.self} players={room.players} socket={socket} word={word} setWord={setWord} hint={hint} setHint={setHint} /> : game?.game === 'cups' ? <CupsGame game={game} self={room.self} players={room.players} socket={socket} /> : game?.game === 'poison' ? <PoisonGame game={game} self={room.self} players={room.players} socket={socket} sameSweetMoments={room.sameSweetMoments} /> : <section className="lobby-grid">
         <div className="games-column"><div className="section-heading"><div><div className="eyebrow">CHOOSE YOUR LITTLE ADVENTURE</div><h2>What shall we play?</h2></div><span className="tiny-sparkle">✧ ✦ ✧</span></div>
           <div className="game-cards">
             <article className="game-card hangman-card"><div className="card-art hangman-art"><span>☁</span><span className="rope">⌁</span><span className="mini-face">◡</span><b>?</b></div><div className="card-content"><div className="game-label">WORD GAME · 2 PLAYERS</div><h3>Hangman</h3><p>A secret word, six guesses, and a very cute little fellow.</p><div className="card-actions"><button className="button primary" onClick={() => socket.emit('startGame', { game: 'hangman', format: 'quick' })}>Quick round <span>→</span></button><button className="button text-button" onClick={() => socket.emit('startGame', { game: 'hangman', format: 'bestOf3' })}>Best of 3</button></div></div></article>
@@ -90,7 +80,7 @@ export default function App() {
           </div>
           <div className="coming-row"><span>ON THE WAY</span><i>Uno Slap</i><i>Memory Duel</i><i>Draw & Guess</i></div>
         </div>
-        <aside className="side-column"><div className="panel scoreboard"><div className="eyebrow">OUR LITTLE SCOREBOARD</div><h3>Wins together <span>✧</span></h3>{['hangman','cups','poison'].map((g, idx) => <div className="score-row" key={g}><span>{['☁','🥤','✿'][idx]} {['Hangman','Cup Ordering','Poison'][idx]}</span><div>{room.players.map(p => <b key={p.id}>{room.scoreboard[g as keyof typeof room.scoreboard]?.[p.id] ?? 0}</b>)}</div></div>)}<div className="score-legend">{room.players.map(p => <span key={p.id}><i className="dot online" />{p.name}</span>)}</div></div><div className="panel note-card"><span>✉</span><p>Two players. One tiny corner. Infinite rematches.</p></div></aside>
+        <aside className="side-column"><div className="panel scoreboard"><div className="eyebrow">OUR LITTLE SCOREBOARD</div><h3>Wins together <span>✧</span></h3>{['hangman','cups','poison'].map((g, idx) => <div className="score-row" key={g}><span>{['☁','🥤','✿'][idx]} {['Hangman','Cup Ordering','Poison'][idx]}</span><div>{room.players.map(p => <b key={p.id}>{room.scoreboard[g as keyof typeof room.scoreboard]?.[p.id] ?? 0}</b>)}</div></div>)}<div className="score-legend">{room.players.map(p => <span key={p.id}><i className="dot online" />{p.name}</span>)}</div><div className="same-sweet-stat"><span aria-hidden="true">♡</span> {room.sameSweetMoments} same-sweet moments</div></div><div className="panel note-card"><span>✉</span><p>Two players. One tiny corner. Infinite rematches.</p></div></aside>
       </section>}
       <footer className="room-footer">made with love for {arcadeConfig.footerName} <span>♡</span></footer>
     </>}

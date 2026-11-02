@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { enterRoom, lobbyView, nextPoisonRound, poisonLock, poisonPick, poisonTap, startGame } from '../rooms.js';
 import {
   createPoison, pickTile, lockPick, tapTile, timeoutTurn,
   legalTiles, checkForcedLoss, resolveForcedLoss, getViewFor,
@@ -15,7 +16,7 @@ function playingGame(
   warmCold = false,
   timerEnabled = false,
 ) {
-  const g = createPoison('A', 'B', 'quick', { gridSize, timerEnabled, confirmMode: true, warmCold });
+  const g = createPoison('A', 'B', 'quick', { gridSize, timerEnabled, confirmMode: true, warmCold, tieMode: 'replay' }, 1, {}, 'A');
   pickTile(g, 'A', pA); lockPick(g, 'A');
   pickTile(g, 'B', pB); lockPick(g, 'B');
   assert.equal(g.phase, 'playing', 'precondition: should be playing after different picks');
@@ -119,39 +120,24 @@ test('checkForcedLoss returns false when more than one legal tile remains', () =
   assert.equal(checkForcedLoss(g), false);
 });
 
-// ─── 5. Same-tile re-pick ─────────────────────────────────────────────────────
+// ─── 5. Same-sweet picks stay private and lock normally ───────────────────────
 
-test('same-tile re-pick clears both locks and picks, stays in setup, updates timestamp', () => {
-  const g = createPoison('A', 'B', 'quick', { gridSize: 4, timerEnabled: false, confirmMode: true, warmCold: false });
-  pickTile(g, 'A', 7);
-  lockPick(g, 'A');
-  pickTile(g, 'B', 7); // same tile as A!
-
-  const beforeTs = g.sameTileRejectedAt;
-  const err = lockPick(g, 'B');
-
-  assert.equal(err, null);            // not returned as an error string
-  assert.equal(g.phase, 'setup');     // still in setup
-  assert.equal(g.lockedA, false);     // both locks cleared
-  assert.equal(g.lockedB, false);
-  assert.equal(g.pickedA, -1);        // both picks cleared
-  assert.equal(g.pickedB, -1);
-  assert.ok(g.sameTileRejectedAt > beforeTs, 'sameTileRejectedAt should be updated');
-  assert.equal(g.poisonA, -1);        // poisons never set
-  assert.equal(g.poisonB, -1);
+test('matching picks lock successfully and expose the same setup/playing view as a different pick', () => {
+  const options = { gridSize: 3 as const, timerEnabled: false, confirmMode: true, warmCold: false, tieMode: 'replay' as const };
+  const matching = createPoison('A', 'B', 'quick', options, 1, {}, 'B');
+  const different = createPoison('A', 'B', 'quick', options, 1, {}, 'B');
+  for (const g of [matching, different]) { pickTile(g, 'A', 0); assert.equal(lockPick(g, 'A'), null); }
+  pickTile(matching, 'B', 0);
+  pickTile(different, 'B', 1);
+  assert.deepEqual(getViewFor(matching, 'A'), getViewFor(different, 'A'));
+  assert.equal(lockPick(matching, 'B'), null);
+  assert.equal(lockPick(different, 'B'), null);
+  assert.equal(matching.phase, 'playing');
+  assert.equal(different.phase, 'playing');
+  assert.deepEqual(getViewFor(matching, 'A'), getViewFor(different, 'A'));
+  assert.deepEqual(getViewFor(matching, 'A').myPoison, [0]);
+  assert.equal('opponentPoison' in getViewFor(matching, 'A'), false);
 });
-
-test('same-tile check cannot be skipped by rapid double-locking', () => {
-  const g = createPoison('A', 'B', 'quick', { gridSize: 4, timerEnabled: false, confirmMode: true, warmCold: false });
-  pickTile(g, 'A', 5); lockPick(g, 'A');
-  pickTile(g, 'B', 5); lockPick(g, 'B');
-  assert.equal(g.phase, 'setup');   // rejected, back to setup
-  // Pick different tiles now and confirm it works
-  pickTile(g, 'A', 5); lockPick(g, 'A');
-  pickTile(g, 'B', 6); lockPick(g, 'B');
-  assert.equal(g.phase, 'playing');
-});
-
 // ─── 6. Stale turnNumber rejection ───────────────────────────────────────────
 
 test('stale turnNumber is rejected without modifying game state', () => {
@@ -267,7 +253,7 @@ test('warm/cold is correct for center, edge, corner, and non-adjacent tiles (4×
 
 test('getViewFor never includes opponentPoison in setup or playing phase', () => {
   // Setup phase: A locked, B has not yet picked
-  const gSetup = createPoison('A', 'B', 'quick', { gridSize: 4, timerEnabled: false, confirmMode: true, warmCold: false });
+  const gSetup = createPoison('A', 'B', 'quick', { gridSize: 4, timerEnabled: false, confirmMode: true, warmCold: false, tieMode: 'replay' }, 1, {}, 'A');
   pickTile(gSetup, 'A', 3);
   lockPick(gSetup, 'A');
 
@@ -275,18 +261,18 @@ test('getViewFor never includes opponentPoison in setup or playing phase', () =>
   assert.ok(!('opponentPoison' in bSetupView), 'no opponentPoison in setup view');
   // B sees A has locked (boolean), but never which tile
   assert.equal(bSetupView.opponentLocked, true);
-  assert.equal(bSetupView.myPick, -1); // B hasn't picked yet
+  assert.deepEqual(bSetupView.myPick, []); // B hasn't picked yet
 
   // Playing phase
   const g = playingGame(4, 0, 15);
 
   const viewA = getViewFor(g, 'A');
   assert.ok(!('opponentPoison' in viewA), 'no opponentPoison in A playing view');
-  assert.equal(viewA.myPoison, 0);
+  assert.deepEqual(viewA.myPoison, [0]);
 
   const viewB = getViewFor(g, 'B');
   assert.ok(!('opponentPoison' in viewB), 'no opponentPoison in B playing view');
-  assert.equal(viewB.myPoison, 15);
+  assert.deepEqual(viewB.myPoison, [15]);
 
   // After a safe tap — still no leak
   g.currentTurn = 'A';
@@ -301,97 +287,197 @@ test('getViewFor never includes opponentPoison in setup or playing phase', () =>
   const endViewB = getViewFor(g, 'B');
   assert.ok('opponentPoison' in endViewA, 'opponentPoison shown at roundOver for A');
   assert.ok('opponentPoison' in endViewB, 'opponentPoison shown at roundOver for B');
-  assert.equal(endViewA.opponentPoison, 15);
-  assert.equal(endViewB.opponentPoison, 0);
+  assert.deepEqual(endViewA.opponentPoison, [15]);
+  assert.deepEqual(endViewB.opponentPoison, [0]);
 
   // Error paths must not leak hidden info
-  const setupG = createPoison('A', 'B', 'quick', { gridSize: 4, timerEnabled: false, confirmMode: true, warmCold: false });
+  const setupG = createPoison('A', 'B', 'quick', { gridSize: 4, timerEnabled: false, confirmMode: true, warmCold: false, tieMode: 'replay' }, 1, {}, 'A');
   const errMsg = lockPick(setupG, 'A'); // should fail: no pick yet
   assert.ok(errMsg !== null && !errMsg.toLowerCase().includes('poison'));
 });
 
-// ─── 10. Property: every game terminates with exactly one loser ───────────────
+// ─── 10. Shared poison resolution ────────────────────────────────────────────
 
-test('property: every game terminates with exactly one loser (3×3, 4×4, 5×5)', () => {
-  const configs: { gs: 3 | 4 | 5; iters: number }[] = [
-    { gs: 3, iters: 200 },
-    { gs: 4, iters: 150 },
-    { gs: 5, iters: 100 },
-  ];
+test('a fully matching round ends in a sweet tie after all other candies are eaten (3×3, 4×4, 5×5)', () => {
+  for (const gridSize of [3, 4, 5] as const) {
+    const shared = Math.floor((gridSize * gridSize) / 2);
+    const g = createPoison('A', 'B', 'quick', { gridSize, timerEnabled: false, confirmMode: true, warmCold: false, tieMode: 'replay' }, 1, {}, 'A');
+    pickTile(g, 'A', shared); assert.equal(lockPick(g, 'A'), null);
+    pickTile(g, 'B', shared); assert.equal(lockPick(g, 'B'), null);
+    assert.equal(g.phase, 'playing');
+    assert.deepEqual(getViewFor(g, 'A').myPoison, [shared]);
+    assert.equal('opponentPoison' in getViewFor(g, 'A'), false);
+    let moves = 0;
+    while (g.phase === 'playing') {
+      const legal = legalTiles(g, g.currentTurn);
+      assert.ok(legal.length > 0, 'legal sweets remain before the last safe taste');
+      const tile = legal[0];
+      assert.notEqual(tile, shared);
+      assert.equal(tapTile(g, g.currentTurn, tile, g.turnNumber), null);
+      moves++;
+      if (g.phase === 'playing') assert.ok(legalTiles(g, g.currentTurn).length > 0);
+    }
+    assert.equal(moves, gridSize * gridSize - 1);
+    assert.equal(g.endReason, 'sweetTie');
+    assert.equal(g.loser, undefined);
+    assert.equal(g.roundWinner, undefined);
+    assert.deepEqual(g.poisonA, g.poisonB);
+    assert.deepEqual(getViewFor(g, 'A').opponentPoison, [shared]);
+    assert.equal('loser' in getViewFor(g, 'A'), false);
+  }
+});
 
-  for (const { gs, iters } of configs) {
-    for (let iter = 0; iter < iters; iter++) {
-      const total = gs * gs;
-      const pA = Math.floor(Math.random() * total);
-      let pB: number;
-      do { pB = Math.floor(Math.random() * total); } while (pB === pA);
+test('timer auto-picks never choose the shared sweet and an empty legal set ends as a tie', () => {
+  const g = playingGame(3, 4, 4, false, true);
+  let safeMoves = 0;
+  while (g.phase === 'playing') {
+    const legal = legalTiles(g, g.currentTurn);
+    assert.ok(!legal.includes(4), 'the shared poison is not legal to either player');
+    if (legal.length === 0) {
+      assert.equal(timeoutTurn(g), null);
+      break;
+    }
+    const before = g.revealed.length;
+    assert.equal(timeoutTurn(g), null);
+    if (g.revealed.length > before) {
+      assert.equal(g.revealed.length, before + 1);
+      assert.notEqual(g.revealed.at(-1)?.index, 4);
+      safeMoves++;
+    }
+  }
+  assert.equal(g.endReason, 'sweetTie');
+  assert.equal(g.loser, undefined);
+  assert.equal(safeMoves, 8);
 
-      const g = playingGame(gs, pA, pB);
-      let steps = 0;
-      const maxSteps = total * 3;
+  const empty = playingGame(3, 4, 4, false, true);
+  empty.revealed = Array.from({ length: 8 }, (_, index) => ({ index: index < 4 ? index : index + 1, eatenBy: 'A' }));
+  assert.deepEqual(legalTiles(empty, empty.currentTurn), []);
+  assert.equal(timeoutTurn(empty), null);
+  assert.equal(empty.endReason, 'sweetTie');
+  assert.equal(empty.loser, undefined);
+});
 
-      while (g.phase === 'playing') {
-        if (++steps > maxSteps) assert.fail(`game did not terminate after ${maxSteps} steps (gs=${gs})`);
-        if (checkForcedLoss(g)) { resolveForcedLoss(g); break; }
-        const legal = legalTiles(g, g.currentTurn);
-        assert.ok(legal.length > 0, 'game is playing but has no legal tiles — deadlock');
-        const tile = legal[Math.floor(Math.random() * legal.length)];
-        const err = tapTile(g, g.currentTurn, tile, g.turnNumber);
-        assert.equal(err, null, `unexpected tap error: ${err}`);
-      }
+test('sweet ties replay without advancing best-of rounds by default or count as a draw when selected', () => {
+  for (const tieMode of ['replay', 'draw'] as const) {
+    const g = createPoison('A', 'B', 'bestOf3', { gridSize: 3, timerEnabled: false, confirmMode: true, warmCold: false, tieMode }, 3, {}, 'A');
+    for (const player of ['A', 'B']) {
+      for (const tile of [1, 2, 3]) assert.equal(pickTile(g, player, tile), null);
+      assert.equal(lockPick(g, player), null);
+    }
+    while (g.phase === 'playing') {
+      const legal = legalTiles(g, g.currentTurn);
+      assert.ok(legal.length > 0);
+      assert.equal(tapTile(g, g.currentTurn, legal[0], g.turnNumber), null);
+    }
+    assert.equal(g.endReason, 'sweetTie');
+    assert.deepEqual(g.matchScore, { A: 0, B: 0 });
+    assert.equal(g.phase, tieMode === 'replay' ? 'roundOver' : 'matchOver');
+  }
+});
 
-      assert.ok(g.phase === 'roundOver' || g.phase === 'matchOver',
-        `game ended in unexpected phase: ${g.phase}`);
-      assert.ok(g.loser === 'A' || g.loser === 'B', 'exactly one loser');
-      assert.ok(g.roundWinner === 'A' || g.roundWinner === 'B', 'exactly one winner');
-      assert.notEqual(g.loser, g.roundWinner, 'loser and winner must differ');
+test('room session counts sweet ties without awarding a round win', () => {
+  const passcode = `sweet-tie-${Date.now()}`;
+  const room = enterRoom(passcode, 'A', 'device-A', 'socket-A').room!;
+  enterRoom(passcode, 'B', 'device-B', 'socket-B');
+  assert.equal(startGame(room, 'device-A', 'poison', 'quick', undefined, { gridSize: 3, timerEnabled: false, confirmMode: true, warmCold: false, tieMode: 'replay' }), null);
+  for (const player of ['device-A', 'device-B']) { assert.equal(poisonPick(room, player, 4), null); assert.equal(poisonLock(room, player), null); }
+  while (true) {
+    const game = room.game;
+    assert.ok(game && 'poisonA' in game);
+    if (game.phase !== 'playing') break;
+    const player = game.currentTurn;
+    const legal = legalTiles(game, player);
+    assert.ok(legal.length > 0);
+    assert.equal(poisonTap(room, player, legal[0], game.turnNumber), null);
+  }
+  assert.equal(lobbyView(room, 'device-A').sameSweetMoments, 1);
+  assert.deepEqual(lobbyView(room, 'device-A').scoreboard.poison, {});
+  const ended = room.game;
+  assert.ok(ended && 'poisonA' in ended);
+  assert.equal(nextPoisonRound(room, 'device-A'), null);
+  const replay = room.game;
+  assert.ok(replay && 'poisonA' in replay);
+  assert.equal(replay.round, ended.round);
+  assert.notEqual(replay.starter, ended.starter);
+  assert.equal(lobbyView(room, 'device-A').sameSweetMoments, 1);
+});
+
+// ─── 11. Property: random games terminate in a loss or sweet tie ───────────────
+
+test('property: random full games always terminate with exactly one loser or a sweet tie', () => {
+  for (let iter = 0; iter < 350; iter++) {
+    const baseSize = ([3, 4, 5] as const)[Math.floor(Math.random() * 3)];
+    const round = 1 + Math.floor(Math.random() * 5);
+    const total = Math.min(9, baseSize + round - 1) ** 2;
+    const chooseSet = () => {
+      const set = new Set<number>();
+      while (set.size < round) set.add(Math.floor(Math.random() * total));
+      return [...set];
+    };
+    const aPoisons = chooseSet();
+    const bPoisons = Math.random() < .2 ? [...aPoisons] : chooseSet();
+    const g = createPoison('A', 'B', 'quick', { gridSize: baseSize, timerEnabled: false, confirmMode: true, warmCold: false, tieMode: 'replay' }, round, {}, 'A');
+    for (const tile of aPoisons) assert.equal(pickTile(g, 'A', tile), null);
+    assert.equal(lockPick(g, 'A'), null);
+    for (const tile of bPoisons) assert.equal(pickTile(g, 'B', tile), null);
+    assert.equal(lockPick(g, 'B'), null);
+    let steps = 0;
+    while (g.phase === 'playing') {
+      assert.ok(++steps <= total * 2, `game hung (grid=${g.gridSize}, round=${round})`);
+      if (checkForcedLoss(g)) { assert.equal(resolveForcedLoss(g), null); break; }
+      const legal = legalTiles(g, g.currentTurn);
+      if (legal.length === 0) { assert.equal(timeoutTurn(g), null); break; }
+      const tile = legal[Math.floor(Math.random() * legal.length)];
+      assert.equal(tapTile(g, g.currentTurn, tile, g.turnNumber), null);
+    }
+    assert.ok(g.phase === 'roundOver' || g.phase === 'matchOver');
+    const tie = g.endReason === 'sweetTie';
+    assert.notEqual(tie, g.loser !== undefined, 'outcome is exactly one loser or a tie');
+    if (tie) {
+      assert.equal(g.roundWinner, undefined);
+      assert.equal(g.loser, undefined);
+    } else {
+      assert.ok(g.loser === 'A' || g.loser === 'B');
+      assert.ok(g.roundWinner === 'A' || g.roundWinner === 'B');
+      assert.notEqual(g.loser, g.roundWinner);
     }
   }
 });
 
-// ─── 11. Views identical for games differing only in opponent's poison ─────────
+// ─── 12. Privacy: matching vs. nonmatching picks are identical in-round ────────
 
-test('getViewFor stays identical while only the opponent poison differs, then reveals both poisons at roundOver', () => {
-  // G1: A's poison=0, B's poison=3
-  const g1 = createPoison('A', 'B', 'quick', { gridSize: 4, timerEnabled: false, confirmMode: true, warmCold: false });
-  pickTile(g1, 'A', 0); lockPick(g1, 'A');
-  pickTile(g1, 'B', 3); lockPick(g1, 'B');
-  g1.currentTurn = 'A'; g1.turnNumber = 1;
-
-  // G2: A's poison=0, B's poison=7  (different opponent poison)
-  const g2 = createPoison('A', 'B', 'quick', { gridSize: 4, timerEnabled: false, confirmMode: true, warmCold: false });
-  pickTile(g2, 'A', 0); lockPick(g2, 'A');
-  pickTile(g2, 'B', 7); lockPick(g2, 'B');
-  g2.currentTurn = 'A'; g2.turnNumber = 1;
-
-  const view = (g: ReturnType<typeof createPoison>) => JSON.stringify(getViewFor(g, 'A'));
-
-  // Initial playing state
-  assert.equal(view(g1), view(g2), 'A views must be identical at game start');
-  assert.ok(!('opponentPoison' in getViewFor(g1, 'A')));
-  assert.ok(!('opponentPoison' in getViewFor(g2, 'A')));
-
-  // Consume every tile that is safe in both games in the same order. The only
-  // remaining legal move for A is its opponent's poison in each game.
-  const commonSafe = [1, 2, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15];
-  for (const tile of commonSafe) {
-    const player = g1.currentTurn;
-    assert.equal(player, g2.currentTurn);
-    assert.equal(view(g1), view(g2), `views must match before tile ${tile}`);
-    assert.equal(tapTile(g1, player, tile, g1.turnNumber), null);
-    assert.equal(tapTile(g2, player, tile, g2.turnNumber), null);
-    assert.equal(view(g1), view(g2), `views must match after safe tile ${tile}`);
-    assert.equal('opponentPoison' in getViewFor(g1, 'A'), false);
-    assert.equal('opponentPoison' in getViewFor(g2, 'A'), false);
+test('matching and nonmatching opponent picks produce identical views and errors until the tie ends', () => {
+  const options = { gridSize: 3 as const, timerEnabled: false, confirmMode: true, warmCold: false, tieMode: 'replay' as const };
+  const matching = createPoison('A', 'B', 'quick', options, 1, {}, 'B');
+  const different = createPoison('A', 'B', 'quick', options, 1, {}, 'B');
+  for (const g of [matching, different]) { pickTile(g, 'A', 0); lockPick(g, 'A'); }
+  pickTile(matching, 'B', 0); pickTile(different, 'B', 8);
+  assert.deepEqual(getViewFor(matching, 'A'), getViewFor(different, 'A'));
+  assert.equal(lockPick(matching, 'B'), null); assert.equal(lockPick(different, 'B'), null);
+  const view = (g: ReturnType<typeof createPoison>) => getViewFor(g, 'A');
+  assert.deepEqual(view(matching), view(different));
+  const staleA = tapTile(matching, 'A', 1, 100); const staleB = tapTile(different, 'A', 1, 100);
+  assert.equal(staleA, staleB);
+  assert.deepEqual(view(matching), view(different));
+  for (const tile of [1, 2, 3, 4, 5, 6, 7]) {
+    const player = matching.currentTurn;
+    assert.equal(player, different.currentTurn);
+    const errA = tapTile(matching, player, tile, matching.turnNumber);
+    const errB = tapTile(different, player, tile, different.turnNumber);
+    assert.equal(errA, errB);
+    assert.equal(errA, null);
+    assert.deepEqual(view(matching), view(different), `in-round view differs after safe tile ${tile}`);
+    assert.equal('opponentPoison' in view(matching), false);
+    assert.equal('opponentPoison' in view(different), false);
   }
-  assert.equal(g1.currentTurn, 'B');
-  assert.equal(g2.currentTurn, 'B');
-  assert.equal(view(g1), view(g2), 'views are identical until the terminal move');
-  assert.equal(tapTile(g1, 'B', 0, g1.turnNumber), null);
-  assert.equal(tapTile(g2, 'B', 0, g2.turnNumber), null);
-  assert.equal(g1.phase, 'matchOver');
-  assert.equal(g2.phase, 'matchOver');
-  assert.notEqual(view(g1), view(g2), 'roundOver views reveal the different opponent poison tiles');
-  assert.equal(getViewFor(g1, 'A').opponentPoison, 3);
-  assert.equal(getViewFor(g2, 'A').opponentPoison, 7);
+  assert.equal(matching.phase, 'playing');
+  assert.equal(different.phase, 'playing');
+  assert.equal(matching.currentTurn, 'A');
+  assert.equal(different.currentTurn, 'A');
+  assert.equal(tapTile(matching, 'A', 8, matching.turnNumber), null);
+  assert.equal(tapTile(different, 'A', 8, different.turnNumber), null);
+  assert.equal(matching.endReason, 'sweetTie');
+  assert.equal(different.endReason, 'tapped');
+  assert.notDeepEqual(view(matching), view(different), 'the difference appears only after round end');
+  assert.equal('opponentPoison' in view(matching), true);
 });

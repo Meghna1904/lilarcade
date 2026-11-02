@@ -5,7 +5,7 @@ import { createCups, getViewFor as cupsViewFor, lockSecret, reaction as cupsReac
 import { checkForcedLoss, createPoison, getViewFor as poisonViewFor, lockPick, pickTile, react as poisonReaction, resolveForcedLoss, tapTile, timeoutTurn, validPoisonSettings, type PoisonGame } from './games/poison.js';
 type Player = { id: string; name: string; online: boolean; socketId: string };
 type Game = HangmanGame | CupsGame | PoisonGame;
-type Room = { key: string; players: Player[]; game: Game | null; scoreboard: Scoreboard };
+type Room = { key: string; players: Player[]; game: Game | null; scoreboard: Scoreboard; sameSweetMoments: number };
 const rooms = new Map<string, Room>();
 const emptyScore = (): Scoreboard => ({ hangman: {}, cups: {}, poison: {} });
 export const hashPasscode = (passcode: string) => {
@@ -16,7 +16,7 @@ export const hashPasscode = (passcode: string) => {
 };
 export function enterRoom(passcode: string, name: string, token: string, socketId: string): { room?: Room; error?: string; id?: string } {
   const key = hashPasscode(passcode); let room = rooms.get(key);
-  if (!room) { room = { key, players: [], game: null, scoreboard: emptyScore() }; rooms.set(key, room); }
+  if (!room) { room = { key, players: [], game: null, scoreboard: emptyScore(), sameSweetMoments: 0 }; rooms.set(key, room); }
   let player = room.players.find(p => p.id === token);
   if (player && player.name !== name) return { error: 'That device is already paired with a different name.' };
   if (!player) {
@@ -38,7 +38,7 @@ export function lobbyView(room: Room, self: string, error?: string): RoomView {
   const players = room.players.map(({ id, name, online }) => ({ id, name, online }));
   const other = room.players.find(p => p.id !== self);
   const gameView = room.game ? 'poisonA' in room.game ? poisonViewFor(room.game, self) : 'cups' in room.game ? cupsViewFor(room.game, self) : viewFor(room.game, self) : null;
-  return { self, players, status: !other ? 'Waiting for your person…' : other.online ? `${other.name} is here 💗` : `${other.name} disconnected, waiting for them to come back`, game: gameView, scoreboard: room.scoreboard, ...(error ? { error } : {}) };
+  return { self, players, status: !other ? 'Waiting for your person…' : other.online ? `${other.name} is here 💗` : `${other.name} disconnected, waiting for them to come back`, game: gameView, scoreboard: room.scoreboard, sameSweetMoments: room.sameSweetMoments, ...(error ? { error } : {}) };
 }
 export function startGame(room: Room, player: string, game: GameId, format: MatchFormat, cups?: Omit<CupsSettings, 'format'>, poison?: Omit<PoisonSettings, 'format'>) {
   if (room.players.length !== 2 || room.players.some(p => !p.online)) return 'Wait until both of you are here.';
@@ -51,7 +51,7 @@ export function startGame(room: Room, player: string, game: GameId, format: Matc
     room.game = createCups(player, other, format, settings);
   }
   else if (game === 'poison') {
-    const settings = { gridSize: poison?.gridSize ?? 4, timerEnabled: poison?.timerEnabled ?? false, confirmMode: poison?.confirmMode ?? true, warmCold: poison?.warmCold ?? false };
+    const settings = { gridSize: poison?.gridSize ?? 4, timerEnabled: poison?.timerEnabled ?? false, confirmMode: poison?.confirmMode ?? true, warmCold: poison?.warmCold ?? false, tieMode: poison?.tieMode ?? 'replay' };
     if (!validPoisonSettings(settings)) return 'Choose a valid Poison Challenge setup.';
     room.game = createPoison(player, other, format, settings);
   }
@@ -98,9 +98,11 @@ export function poisonTap(room: Room, player: string, tile: number, turnNumber: 
   const game = room.game;
   if (!game || !('poisonA' in game)) return 'Start a Poison Challenge first.';
   const before = game.matchScore[game.playerA] + game.matchScore[game.playerB];
+  const wasPlaying = game.phase === 'playing';
   const error = tapTile(game, player, tile, turnNumber);
   const after = game.matchScore[game.playerA] + game.matchScore[game.playerB];
   if (!error && after > before && game.roundWinner) room.scoreboard.poison[game.roundWinner] = (room.scoreboard.poison[game.roundWinner] ?? 0) + 1;
+  if (!error && wasPlaying && game.phase !== 'playing' && game.endReason === 'sweetTie') room.sameSweetMoments++;
   return error;
 }
 export function poisonReact(room: Room, player: string, emoji: string) {
@@ -110,9 +112,11 @@ export function poisonTimeout(room: Room) {
   const game = room.game;
   if (!game || !('poisonA' in game) || game.phase !== 'playing') return null;
   const before = game.matchScore[game.playerA] + game.matchScore[game.playerB];
+  const wasPlaying = game.phase === 'playing';
   const error = timeoutTurn(game);
   const after = game.matchScore[game.playerA] + game.matchScore[game.playerB];
   if (!error && after > before && game.roundWinner) room.scoreboard.poison[game.roundWinner] = (room.scoreboard.poison[game.roundWinner] ?? 0) + 1;
+  if (!error && wasPlaying && game.phase !== 'playing' && game.endReason === 'sweetTie') room.sameSweetMoments++;
   return error;
 }
 export function poisonForcedLoss(room: Room) {
@@ -128,7 +132,8 @@ export function nextPoisonRound(room: Room, player: string) {
   if (player !== game.playerA && player !== game.playerB) return 'You are not in this game.';
   if (room.players.some(p => !p.online)) return 'Wait until your person is back to play again.';
   const nextStarter = game.playerA === game.starter ? game.playerB : game.playerA;
-  room.game = createPoison(game.playerA, game.playerB, game.format, game.settings, game.phase === 'matchOver' ? 1 : game.round + 1, game.phase === 'matchOver' ? {} : game.matchScore, nextStarter);
+  const replaySweetTie = game.endReason === 'sweetTie' && game.settings.tieMode === 'replay';
+  room.game = createPoison(game.playerA, game.playerB, game.format, game.settings, game.phase === 'matchOver' ? 1 : replaySweetTie ? game.round : game.round + 1, game.phase === 'matchOver' ? {} : game.matchScore, nextStarter);
   return null;
 }
 export function nextHangman(room: Room, player: string) {
