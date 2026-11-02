@@ -249,7 +249,12 @@ io.on('connection', socket => {
     handleCloud(room, player.id, move, ack);
   };
 
-  socket.on('startGame', ({ game, format, cups, poison, cloud, slapCount }) => action((r, p) => startGame(r, p, game, format, cups, poison, cloud, slapCount)));
+  socket.on('startGame', ({ game, format, cups, poison, cloud, slapCount }, ack) => action((r, p) => startGame(r, p, game, format, cups, poison, cloud, slapCount), ack));
+  socket.on('requestRoomState', () => {
+    const room = roomForSocket(socket.id);
+    const player = room && playerFor(room, socket.id);
+    if (room && player) socket.emit('roomState', lobbyView(room, player.id));
+  });
   socket.on('setHangmanWord', ({ word, hint }) => action((r, p) => setHangman(r, p, word, hint)));
   socket.on('guessLetter', ({ letter }) => action((r, p) => makeGuess(r, p, letter)));
   socket.on('hangmanReaction', ({ emoji }) => action((r, p) => reaction(r, p, emoji)));

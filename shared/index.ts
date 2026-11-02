@@ -112,7 +112,8 @@ export type RoomView = {
 export type ClientToServerEvents = {
   enter: (payload: { name: string; passcode: string; token: string; timezone?: string; doodleId?: string; shareSky?: boolean }) => void;
   'doodle:select': (payload: { doodleId: string }) => void;
-  startGame: (payload: { game: GameId; format: MatchFormat; cups?: Omit<CupsSettings, 'format'>; poison?: Omit<PoisonSettings, 'format'>; cloud?: CloudSettings; slapCount?: SlapSettings }) => void;
+  startGame: (payload: { game: GameId; format: MatchFormat; cups?: Omit<CupsSettings, 'format'>; poison?: Omit<PoisonSettings, 'format'>; cloud?: CloudSettings; slapCount?: SlapSettings }, ack?: (error: string | null) => void) => void;
+  requestRoomState: () => void;
   'surprise:answer': (payload: { answer: SurpriseChoice; prediction: SurpriseChoice }) => void;
   'surprise:nextPrompt': () => void;
   'slap:layCard': () => void;
