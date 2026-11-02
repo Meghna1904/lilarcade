@@ -20,7 +20,7 @@ function ScoreboardPanel({ players, self, scores, sameSweetMoments }: Props) {
   const mine = players.find(player => player.id === self);
   const partner = players.find(player => player.id !== self);
   const rows: Array<{ game: GameId; id: string }> = [
-    { game: 'hangman', id: 'hangman' }, { game: 'cups', id: 'cups' }, { game: 'poison', id: 'poison' }, { game: 'cloud', id: 'cloud' }, { game: 'slapcount', id: 'slapcount' }, { game: 'surprise', id: 'surprise' },
+    { game: 'hangman', id: 'hangman' }, { game: 'cups', id: 'cups' }, { game: 'poison', id: 'poison' }, { game: 'cloud', id: 'cloud' }, { game: 'slapcount', id: 'slapcount' },
   ];
   return <section className="lobby-scoreboard-board" aria-labelledby="lobby-score-title">
     <div className="scoreboard-title"><span className="eyebrow">OUR LITTLE CHALKBOARD</span><h2 id="lobby-score-title">Wins together <span>✦</span></h2></div>

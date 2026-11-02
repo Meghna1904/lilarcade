@@ -8,7 +8,6 @@ import { CloudGame, CloudLobbyCard } from './components/games/cloud/CloudGame';
 import { FloatingReactions } from './components/reactions/FloatingReactions';
 import { ReactionBar } from './components/reactions/ReactionBar';
 import { SlapCountGame, SlapCountLobbyCard } from './components/games/slapcount/SlapCountGame';
-import { SurpriseGame } from './components/games/surprise/SurpriseGame';
 import { GameScreenErrorBoundary } from './components/games/GameScreenErrorBoundary';
 import { Scene, SceneSettings } from './scene/Scene';
 import { sceneConfig } from './scene/config';
@@ -35,24 +34,12 @@ const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
 
 type LobbySettings = Record<string, string | number | boolean>;
 function setting(settings: LobbySettings, key: string, fallback: string | number | boolean) { return settings[key] ?? fallback; }
-function startLobbyGame(socket: ArcadeSocket, id: LobbyGameId, format: string, settings: LobbySettings, onStartError: (message: string) => void) {
+function startLobbyGame(socket: ArcadeSocket, id: LobbyGameId, format: string, settings: LobbySettings) {
   if (id === 'hangman') socket.emit('startGame', { game: 'hangman', format: format as 'quick' | 'bestOf3' });
   if (id === 'cups') socket.emit('startGame', { game: 'cups', format: format as 'quick' | 'bestOf3', cups: { cupCount: Number(setting(settings, 'cupCount', 5)), maxGuesses: Number(setting(settings, 'maxGuesses', 8)), hintEnabled: Boolean(setting(settings, 'hintEnabled', false)) } });
   if (id === 'poison') socket.emit('startGame', { game: 'poison', format: format as 'quick' | 'bestOf3' | 'bestOf5', poison: { gridSize: Number(setting(settings, 'gridSize', 4)) as 3 | 4 | 5, timerEnabled: Boolean(setting(settings, 'timerEnabled', false)), confirmMode: Boolean(setting(settings, 'confirmMode', true)), warmCold: Boolean(setting(settings, 'warmCold', false)), tieMode: setting(settings, 'tieMode', 'replay') as 'replay' | 'draw' } });
   if (id === 'cloud') socket.emit('startGame', { game: 'cloud', format: format as 'quick' | 'bestOf3', cloud: { targetBoxes: Number(setting(settings, 'targetBoxes', 100)) as 30 | 50 | 100, catchBonus: Number(setting(settings, 'catchBonus', 1)) as 0 | 1 | 2 | 3, layoutMode: setting(settings, 'layoutMode', 'hunt') as 'hunt' | 'round', huntTimeoutSeconds: Number(setting(settings, 'huntTimeoutSeconds', 45)) as 15 | 30 | 45 | 60 } });
   if (id === 'slapcount') socket.emit('startGame', { game: 'slapcount', format: format as 'quick' | 'bestOf3', slapCount: { startingCards: Number(setting(settings, 'startingCards', 20)), penaltyCards: Number(setting(settings, 'penaltyCards', 2)), pace: setting(settings, 'pace', 'manual') as 'manual' | 1200 | 1000 | 800, callMode: Boolean(setting(settings, 'callMode', false)) } });
-  if (id === 'surprise') {
-    let acknowledged = false;
-    const timeout = window.setTimeout(() => {
-      if (!acknowledged) onStartError('Surprise Us did not respond. Check your connection and try again.');
-    }, 6000);
-    socket.emit('startGame', { game: 'surprise', format: 'quick' }, error => {
-      acknowledged = true;
-      window.clearTimeout(timeout);
-      if (error) onStartError(error);
-      else socket.emit('requestRoomState');
-    });
-  }
 }
 
 export default function App() {
@@ -142,7 +129,7 @@ export default function App() {
   const isQuietGame = !!game;
   const myDoodle = selectedDoodle || (room ? playerDoodleId(room.players, me) : 'her');
   const partnerDoodle = room ? playerDoodleId(room.players, room.players.find(player => player.id !== room.self)) : 'him';
-  return <main className={`app-shell ${!isQuietGame ? 'scene-active' : ''} ${game ? 'game-active' : ''} ${game?.game === 'cups' ? 'cups-app-shell' : ''} ${game?.game === 'hangman' ? 'hangman-app-shell' : ''} ${game?.game === 'poison' ? 'poison-app-shell' : ''} ${game?.game === 'cloud' ? 'cloud-app-shell' : ''} ${game?.game === 'slapcount' ? 'slap-app-shell' : ''} ${game?.game === 'surprise' ? 'surprise-app-shell' : ''}`}>
+  return <main className={`app-shell ${!isQuietGame ? 'scene-active' : ''} ${game ? 'game-active' : ''} ${game?.game === 'cups' ? 'cups-app-shell' : ''} ${game?.game === 'hangman' ? 'hangman-app-shell' : ''} ${game?.game === 'poison' ? 'poison-app-shell' : ''} ${game?.game === 'cloud' ? 'cloud-app-shell' : ''} ${game?.game === 'slapcount' ? 'slap-app-shell' : ''}`}>
     {!isQuietGame && <><Scene rooftop={!!room}/>{!room && <div className="scene-actors login-actors" style={{ '--doodle-left': `${sceneConfig.doodlePlacement.left}%`, '--doodle-right': `${sceneConfig.doodlePlacement.right}%`, '--doodle-bottom': `${100 - sceneConfig.doodlePlacement.baseline}%` } as React.CSSProperties}>
       <div className="scene-actor"><Doodle id={room ? myDoodle : 'sunny'} name={room ? me?.name : 'You'} size="clamp(58px, 9vw, 116px)"/><span>{room ? me?.name : 'you'}</span></div>
       <div className="scene-actor"><Doodle id={room ? partnerDoodle : 'moonbeam'} name={room ? other?.name : 'Your person'} size="clamp(58px, 9vw, 116px)"/><span>{room ? other?.name || 'your person' : 'your person'}</span></div>
@@ -165,9 +152,9 @@ export default function App() {
       {!game && !canStartGame && <p className="lobby-connection-note" role="status">{room.players.length < 2 ? 'Your person needs to join the room before a game can start.' : 'Both players need to be connected before a game can start.'}</p>}
       {actionError && <div className="toast" role="status">{actionError}</div>}
       {game ? <GameScreenErrorBoundary key={game.game} onBackToLobby={() => socket.emit('backToLobby')}>
-        {game.game === 'hangman' ? <HangmanScreen game={game} self={room.self} players={displayPlayers} socket={socket} word={word} setWord={setWord} hint={hint} setHint={setHint} connected={connected} muted={muted} onToggleMute={toggleMute} /> : game.game === 'cups' ? <CupsGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'poison' ? <PoisonGame game={game} self={room.self} players={displayPlayers} socket={socket} sameSweetMoments={room.sameSweetMoments} /> : game.game === 'cloud' ? <CloudGame game={game} self={room.self} players={displayPlayers} socket={socket} connected={connected} /> : game.game === 'slapcount' ? <SlapCountGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'surprise' ? <SurpriseGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : null}
+        {game.game === 'hangman' ? <HangmanScreen game={game} self={room.self} players={displayPlayers} socket={socket} word={word} setWord={setWord} hint={hint} setHint={setHint} connected={connected} muted={muted} onToggleMute={toggleMute} /> : game.game === 'cups' ? <CupsGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'poison' ? <PoisonGame game={game} self={room.self} players={displayPlayers} socket={socket} sameSweetMoments={room.sameSweetMoments} /> : game.game === 'cloud' ? <CloudGame game={game} self={room.self} players={displayPlayers} socket={socket} connected={connected} /> : game.game === 'slapcount' ? <SlapCountGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : null}
       </GameScreenErrorBoundary> : <section className="lobby-layout">
-        <div className="games-column"><div className="lobby-games-heading"><div><div className="eyebrow">CHOOSE YOUR LITTLE ADVENTURE</div><h2>What shall we play?</h2></div><span className="tiny-sparkle">✧ ✦ ✧</span></div><div className="game-tickets">{gameRegistry.map(config => <GameTicket key={config.id} config={config} canPlay={canStartGame} onLaunch={(format, settings) => startLobbyGame(socket, config.id, format, settings, message => { setActionError(message); window.setTimeout(() => setActionError(''), 2800); })}/>)}</div><div className="lobby-coming-row"><span>ON THE WAY</span><i>Memory Duel</i><i>Draw &amp; Guess</i></div></div>
+        <div className="games-column"><div className="lobby-games-heading"><div><div className="eyebrow">CHOOSE YOUR LITTLE ADVENTURE</div><h2>What shall we play?</h2></div><span className="tiny-sparkle">✧ ✦ ✧</span></div><div className="game-tickets">{gameRegistry.map(config => <GameTicket key={config.id} config={config} canPlay={canStartGame} onLaunch={(format, settings) => startLobbyGame(socket, config.id, format, settings)}/>)}</div><div className="lobby-coming-row"><span>ON THE WAY</span><i>Memory Duel</i><i>Draw &amp; Guess</i></div></div>
         <aside className="lobby-side-column"><LobbyScoreboard players={displayPlayers} self={room.self} scores={room.scoreboard} sameSweetMoments={room.sameSweetMoments}/><div className="panel note-card"><span>✉</span><p>Two players. One tiny corner. Infinite rematches.</p></div></aside>
       </section>}
       {!game && <footer className="lobby-footer">{lobbyCopy.footer}</footer>}

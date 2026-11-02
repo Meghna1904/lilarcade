@@ -20,7 +20,6 @@ export function GameTicket({ config, canPlay, onLaunch }: { config: GameTicketCo
     if (field.type === 'checkbox') return value ? field.label.toLowerCase() : '';
     return `${field.label.toLowerCase()} ${field.options?.find(option => option.value === value)?.label ?? value}`;
   }).filter(Boolean), [config.settings, settings]);
-  const isSurprise = config.id === 'surprise';
   const chooseFormat = (value: string) => { setFormat(value); writeStorage(`arcade-format-${config.id}`, value); };
   const update = (id: string, value: string|number|boolean) => setSettings(current => { const next = { ...current, [id]: value }; writeStorage(`arcade-settings-${config.id}`, next); return next; });
   const openTweak = () => {
@@ -36,7 +35,7 @@ export function GameTicket({ config, canPlay, onLaunch }: { config: GameTicketCo
         <div className="ticket-actions">
           {config.formats.length > 0 && <div className="ticket-formats" role="radiogroup" aria-label={`${config.title} match format`}>{config.formats.map(value => <button type="button" role="radio" aria-checked={format === value} className={format === value ? 'selected' : ''} key={value} onClick={() => chooseFormat(value)}>{value === 'quick' ? 'Quick' : value === 'bestOf3' ? 'Best of 3' : 'Best of 5'}</button>)}</div>}
           {config.settings.length > 0 && <button type="button" className="ticket-tweak" aria-label={`Tweak ${config.title} settings`} aria-expanded={tweakOpen} ref={tweakRef} onClick={openTweak}>☷</button>}
-          <button type="button" className={`ticket-play${isSurprise ? ' ticket-play-surprise' : ''}`} disabled={!canPlay} title={!canPlay ? 'Both players need to be connected to start a game.' : undefined} aria-label={isSurprise ? 'Start a Surprise Us match' : undefined} onClick={() => onLaunch(format, settings)}>{!canPlay ? 'Wait' : isSurprise ? 'Surprise us' : 'Play'}{canPlay && <span aria-hidden="true">{isSurprise ? '✦' : '→'}</span>}</button>
+          <button type="button" className="ticket-play" disabled={!canPlay} title={!canPlay ? 'Both players need to be connected to start a game.' : undefined} onClick={() => onLaunch(format, settings)}>{!canPlay ? 'Wait' : 'Play'}{canPlay && <span aria-hidden="true">→</span>}</button>
         </div>
       </div>
     </article>

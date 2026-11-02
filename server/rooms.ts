@@ -2,15 +2,14 @@ import { createHash, createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isReactionId, type CloudMove, type CloudSettings, type CupId, type GameId, type MatchFormat, type RoomView, type Scoreboard, type CupsSettings, type PoisonSettings, type SlapMove, type SlapSettings, type SurpriseChoice } from '@arcade/shared';
+import { isReactionId, type CloudMove, type CloudSettings, type CupId, type GameId, type MatchFormat, type RoomView, type Scoreboard, type CupsSettings, type PoisonSettings, type SlapMove, type SlapSettings } from '@arcade/shared';
 import { createHangman, guess, setWord, viewFor, type HangmanGame } from './games/hangman.js';
 import { createCups, getViewFor as cupsViewFor, lockSecret, reaction as cupsReaction, submitGuess, useHint, validSettings, type CupsGame } from './games/cups.js';
 import { checkForcedLoss, createPoison, getViewFor as poisonViewFor, lockPick, pickTile, react as poisonReaction, resolveForcedLoss, tapTile, timeoutTurn, validPoisonSettings, type PoisonGame } from './games/poison.js';
 import { createCloudGame, getViewFor as cloudViewFor, handleMove as handleCloudMove, type CloudGame } from './games/cloud.js';
 import { completeResolve, createGame as createSlapCount, getViewFor as slapViewFor, handleMove as handleSlapMove, markCardVisible, resolveWindow, startPlaying, type SlapCountGame } from './games/slapcount.js';
-import { createSurpriseGame, nextSurprisePrompt, submitSurpriseAnswer, surpriseViewFor, type SurpriseGame } from './games/surprise.js';
 type Player = { id: string; name: string; online: boolean; socketId: string; timezone?: string; doodleId?: string };
-type Game = HangmanGame | CupsGame | PoisonGame | CloudGame | SlapCountGame | SurpriseGame;
+type Game = HangmanGame | CupsGame | PoisonGame | CloudGame | SlapCountGame;
 type Room = { key: string; players: Player[]; game: Game | null; scoreboard: Scoreboard; sameSweetMoments: number };
 const rooms = new Map<string, Room>();
 function manifestDoodleIds() {
@@ -28,7 +27,7 @@ function validTimezone(value: unknown): value is string {
 function validDoodleId(value: unknown): value is string {
   return typeof value === 'string' && value.length <= 40 && manifestDoodleIds().has(value);
 }
-const emptyScore = (): Scoreboard => ({ hangman: {}, cups: {}, poison: {}, cloud: {}, slapcount: {}, surprise: {} });
+const emptyScore = (): Scoreboard => ({ hangman: {}, cups: {}, poison: {}, cloud: {}, slapcount: {} });
 export const hashPasscode = (passcode: string) => {
   const pepper = process.env.ARCADE_PASSCODE_PEPPER;
   return pepper
@@ -67,7 +66,7 @@ export function updatePlayerDoodle(room: Room, playerId: string, doodleId: unkno
 export function lobbyView(room: Room, self: string, error?: string): RoomView {
   const players = room.players.map(({ id, name, online, timezone, doodleId }) => ({ id, name, online, ...(timezone ? { timezone } : {}), ...(doodleId ? { doodleId } : {}) }));
   const other = room.players.find(p => p.id !== self);
-  const gameView = room.game ? 'slapCount' in room.game ? slapViewFor(room.game, self) : 'cloudGame' in room.game ? cloudViewFor(room.game, self) : 'poisonA' in room.game ? poisonViewFor(room.game, self) : 'surpriseGame' in room.game ? surpriseViewFor(room.game) : 'cups' in room.game ? cupsViewFor(room.game, self) : viewFor(room.game, self) : null;
+  const gameView = room.game ? 'slapCount' in room.game ? slapViewFor(room.game, self) : 'cloudGame' in room.game ? cloudViewFor(room.game, self) : 'poisonA' in room.game ? poisonViewFor(room.game, self) : 'cups' in room.game ? cupsViewFor(room.game, self) : viewFor(room.game, self) : null;
   return { self, players, status: !other ? 'Waiting for your person…' : other.online ? `${other.name} is here 💗` : `${other.name} disconnected, waiting for them to come back`, game: gameView, scoreboard: room.scoreboard, sameSweetMoments: room.sameSweetMoments, ...(error ? { error } : {}) };
 }
 export function startGame(room: Room, player: string, game: GameId, format: MatchFormat, cups?: Omit<CupsSettings, 'format'>, poison?: Omit<PoisonSettings, 'format'>, cloud?: CloudSettings, slapCount?: SlapSettings) {
@@ -102,31 +101,8 @@ export function startGame(room: Room, player: string, game: GameId, format: Matc
     if (!validSlapSettings(settings)) return 'Choose valid Slap Count settings.';
     room.game = createSlapCount(player, other, player, format, settings);
   }
-  else if (game === 'surprise') {
-    if (format !== 'quick') return 'Surprise Us supports quick matches.';
-    room.game = createSurpriseGame(player, other);
-  }
   else return 'That game is coming soon.';
   return null;
-}
-
-export function surpriseAnswer(room: Room, player: string, answer: SurpriseChoice, prediction: SurpriseChoice) {
-  const game = room.game;
-  if (!game || !('surpriseGame' in game)) return 'Start a Surprise Us game first.';
-  if (game.paused) return 'Wait until your person is back to play.';
-  const priorPhase = game.phase;
-  const error = submitSurpriseAnswer(game, player, answer, prediction);
-  if (!error && priorPhase !== 'matchOver' && game.phase === 'matchOver' && game.winner) {
-    room.scoreboard.surprise[game.winner] = (room.scoreboard.surprise[game.winner] ?? 0) + 1;
-  }
-  return error;
-}
-
-export function surpriseNextPrompt(room: Room, player: string) {
-  const game = room.game;
-  if (!game || !('surpriseGame' in game)) return 'Start a Surprise Us game first.';
-  if (game.paused) return 'Wait until your person is back to play.';
-  return nextSurprisePrompt(game, player);
 }
 
 export function validSlapSettings(settings: SlapSettings) {
@@ -302,7 +278,6 @@ export function nextHangman(room: Room, player: string) {
   if ('slapCount' in g) return nextSlapRound(room, player);
   if ('poisonA' in g) return nextPoisonRound(room, player);
   if ('cloudGame' in g) return nextCloudRound(room, player);
-  if ('surpriseGame' in g) return 'Start a new Surprise Us match from the lobby.';
   if ('cups' in g) {
     if (player !== g.guesser && player !== g.arranger) return 'You are not in this game.';
   } else if (player !== g.guesser && player !== g.setter) return 'You are not in this game.';

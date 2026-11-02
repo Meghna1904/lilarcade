@@ -1,4 +1,4 @@
-export type GameId = 'hangman' | 'cups' | 'poison' | 'cloud' | 'slapcount' | 'surprise';
+export type GameId = 'hangman' | 'cups' | 'poison' | 'cloud' | 'slapcount';
 export { REACTIONS, isReactionId } from './reactions.js';
 export type { ReactionId } from './reactions.js';
 export type MatchFormat = 'quick' | 'bestOf3' | 'bestOf5';
@@ -76,16 +76,6 @@ export type SlapView = {
   roundWinner?: string; matchWinner?: string; draw?: boolean; paused: boolean; remainingMs?: number;
   lastReaction?: { player: string; emoji: string; at: number };
 };
-export type SurpriseChoice = 0 | 1;
-export type SurprisePrompt = { question: string; choices: [string, string] };
-export type SurpriseView = {
-  game: 'surprise'; phase: 'answering' | 'reveal' | 'matchOver'; prompt: SurprisePrompt;
-  promptIndex: number; totalPrompts: number; players: [string, string];
-  answered: Record<string, boolean>; scores: Record<string, number>;
-  answers?: Record<string, SurpriseChoice>; predictions?: Record<string, SurpriseChoice>;
-  correctPredictions?: Record<string, boolean>; winner?: string; draw?: boolean; paused: boolean;
-  lastReaction?: { player: string; emoji: string; at: number };
-};
 export type PoisonMove =
   | { type: 'poison:pickTile'; tile: number }
   | { type: 'poison:lockPick' }
@@ -106,16 +96,13 @@ export type SlapMove =
   | { type: 'slap:nextRound' }
   | { type: 'slap:backToLobby' };
 export type RoomView = {
-  self: string; players: PlayerSummary[]; status: string; game: HangmanView | CupsView | PoisonView | CloudView | SlapView | SurpriseView | null;
+  self: string; players: PlayerSummary[]; status: string; game: HangmanView | CupsView | PoisonView | CloudView | SlapView | null;
   scoreboard: Scoreboard; sameSweetMoments: number; error?: string;
 };
 export type ClientToServerEvents = {
   enter: (payload: { name: string; passcode: string; token: string; timezone?: string; doodleId?: string; shareSky?: boolean }) => void;
   'doodle:select': (payload: { doodleId: string }) => void;
-  startGame: (payload: { game: GameId; format: MatchFormat; cups?: Omit<CupsSettings, 'format'>; poison?: Omit<PoisonSettings, 'format'>; cloud?: CloudSettings; slapCount?: SlapSettings }, ack?: (error: string | null) => void) => void;
-  requestRoomState: () => void;
-  'surprise:answer': (payload: { answer: SurpriseChoice; prediction: SurpriseChoice }) => void;
-  'surprise:nextPrompt': () => void;
+  startGame: (payload: { game: GameId; format: MatchFormat; cups?: Omit<CupsSettings, 'format'>; poison?: Omit<PoisonSettings, 'format'>; cloud?: CloudSettings; slapCount?: SlapSettings }) => void;
   'slap:layCard': () => void;
   'slap:slap': (payload: { cardId: number }, ack?: (result: 'pending' | 'ignored' | 'wrong' | 'rejected') => void) => void;
   'slap:ping': (payload: { pingId: number; clientTime: number }) => void;

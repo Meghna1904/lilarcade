@@ -1,7 +1,7 @@
 import type { ComponentType } from 'react';
 import { TicketIllustration } from './TicketIllustration';
 
-export type LobbyGameId = 'hangman'|'cups'|'poison'|'cloud'|'slapcount'|'surprise';
+export type LobbyGameId = 'hangman'|'cups'|'poison'|'cloud'|'slapcount';
 export type SettingOption = { label: string; value: string|number|boolean };
 export type GameSetting = { id: string; label: string; type: 'select'|'checkbox'; default: string|number|boolean; options?: SettingOption[] };
 export type GameTicketConfig = { id: LobbyGameId; title: string; tagline: string; description: string; accent: string; formats: Array<'quick'|'bestOf3'|'bestOf5'>; settings: GameSetting[]; image?: string; art: ComponentType<{ className?: string }> };
@@ -39,7 +39,6 @@ export const gameRegistry: GameTicketConfig[] = [
     { id: 'pace', label: 'Turn pace', type: 'select', default: 'manual', options: [{ label: 'Manual lay', value: 'manual' }, { label: 'Auto · 1.2 sec', value: 1200 }, { label: 'Auto · 1 sec', value: 1000 }, { label: 'Auto · 0.8 sec', value: 800 }] },
     { id: 'callMode', label: 'Call mode · hide count', type: 'checkbox', default: false },
   ], art: TicketIllustration },
-  { id: 'surprise', title: 'Surprise us', tagline: 'A LITTLE WILDCARD · 2 PLAYERS', description: 'Five tiny choices. How well can you guess each other?', accent: 'var(--rose)', formats: ['quick'], settings: [], art: TicketIllustration },
 ];
 
 export function defaultSettings(config: GameTicketConfig) { return Object.fromEntries(config.settings.map(setting => [setting.id, setting.default])); }
