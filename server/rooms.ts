@@ -97,7 +97,7 @@ export function startGame(room: Room, player: string, game: GameId, format: Matc
   }
   else if (game === 'slapcount') {
     if (format !== 'quick' && format !== 'bestOf3') return 'Slap Count supports Quick and Best of 3.';
-    const settings: SlapSettings = { startingCards: slapCount?.startingCards ?? 20, penaltyCards: slapCount?.penaltyCards ?? 2, pace: slapCount?.pace ?? 'manual', callMode: slapCount?.callMode ?? false };
+    const settings: SlapSettings = { startingCards: slapCount?.startingCards ?? 20, pace: slapCount?.pace ?? 'manual', callMode: slapCount?.callMode ?? false };
     if (!validSlapSettings(settings)) return 'Choose valid Slap Count settings.';
     room.game = createSlapCount(player, other, player, format, settings);
   }
@@ -107,7 +107,6 @@ export function startGame(room: Room, player: string, game: GameId, format: Matc
 
 export function validSlapSettings(settings: SlapSettings) {
   return Number.isInteger(settings.startingCards) && settings.startingCards >= 10 && settings.startingCards <= 20 &&
-    Number.isInteger(settings.penaltyCards) && settings.penaltyCards >= 1 && settings.penaltyCards <= 3 &&
     (settings.pace === 'manual' || (typeof settings.pace === 'number' && [800,1000,1200].includes(settings.pace))) && typeof settings.callMode === 'boolean';
 }
 

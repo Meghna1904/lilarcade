@@ -1,19 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createGame, getViewFor, layCard, markCardVisible, slap, resolveWindow, completeResolve, startPlaying, recordRtt, pauseTimers, resumeTimers, handleMove } from './slapcount.js';
+import { createGame, getViewFor, layCard, markCardVisible, slap, resolveWindow, completeResolve, startPlaying, recordOneWayLatency, pauseTimers, resumeTimers, handleMove } from './slapcount.js';
 import type { SlapSettings } from '@arcade/shared';
 
-const settings: SlapSettings = { startingCards: 10, penaltyCards: 2, pace: 'manual', callMode: false };
+const settings: SlapSettings = { startingCards: 10, pace: 'manual', callMode: false };
 function game(now = 0) { return createGame('a', 'b', 'a', 'quick', settings, 1, {}, now); }
 function play(g: ReturnType<typeof game>, now = 3_000) { assert.equal(startPlaying(g, now), true); }
 function cards(values: number[], suit: 'heart'|'star'|'moon'|'drop' = 'heart') { return values.map((value, i) => ({ uid: i + 1, value, suit })); }
 function giveVisible(g: ReturnType<typeof game>) { markCardVisible(g, 'a'); markCardVisible(g, 'b'); }
 
-test('builds a shuffled 40-card deck and views reveal only counts and played pile', () => {
+test('builds a shuffled 44-card deck with numbers one through ten and wild cards', () => {
   const g = createGame('a','b','a','quick',{ ...settings, startingCards:20 },1,{},0);
   assert.equal(g.decks.a.length, 20); assert.equal(g.decks.b.length, 20);
-  assert.equal(new Set([...g.decks.a, ...g.decks.b].map(card => card.uid)).size, 40);
-  assert.equal([...g.decks.a, ...g.decks.b].every(card => card.value === 'W' || (card.value >= 1 && card.value <= 9)), true);
+  assert.equal(new Set([...g.decks.a, ...g.decks.b].map(card => card.uid)).size, 44);
+  assert.equal([...g.decks.a, ...g.decks.b].every(card => card.value === 'W' || (card.value >= 1 && card.value <= 10)), true);
   const view = getViewFor(g, 'a', 0) as any;
   assert.equal(view.myDeckSize, 20); assert.equal(view.opponentDeckSize, 20);
   assert.equal('decks' in view, false); assert.equal('uid' in view, false);
@@ -30,19 +30,19 @@ test('ready countdown starts play and count wraps from ten to one', () => {
   assert.equal(g.count, 1);
 });
 
-test('matching slap resolves to the fastest RTT-adjusted player and transfers pile', () => {
+test('matching slap resolves to the fastest latency-adjusted player and transfers pile', () => {
   const g = game(); play(g); g.decks.a = cards([1, 2]); g.decks.b = cards([1, 2]);
   const laid = layCard(g, 'a', 3_000); assert.equal(laid.cardLaid?.count, 1); giveVisible(g);
-  recordRtt(g, 'a', 0); recordRtt(g, 'b', 100);
+  recordOneWayLatency(g, 'a', 0); recordOneWayLatency(g, 'b', 100);
   assert.equal(handleMove(g, 'a', { type: 'slap:slap', cardId: g.currentCardId }, 3_100).status, 'pending');
   assert.equal(handleMove(g, 'b', { type: 'slap:slap', cardId: g.currentCardId }, 3_120).status, 'pending');
-  const resolved = resolveWindow(g, 3_270);
+  const resolved = resolveWindow(g, 3_350);
   assert.equal(resolved.event?.result, 'pile'); assert.equal(resolved.event?.winner, 'b');
   assert.equal(g.phase, 'resolving'); assert.equal(g.pile.length, 0); assert.equal(g.decks.b.length, 3);
-  assert.equal(completeResolve(g, 4_470), true); assert.equal(g.turn, 'a'); assert.equal(g.count, 1);
+  assert.equal(completeResolve(g, 4_550), true); assert.equal(g.turn, 'a'); assert.equal(g.count, 1);
 });
 
-test('old and unseen cards are ignored; wrong slaps transfer up to the configured penalty', () => {
+test('old and unseen cards are ignored; wrong slaps transfer up to two cards', () => {
   const g = game(); play(g); g.decks.a = cards([7, 2, 3]); g.decks.b = cards([4, 4, 4]);
   layCard(g, 'a', 3_000); // count 1, card 7 is not a match
   assert.equal(slap(g, 'b', g.currentCardId, 0, 3_010).status, 'ignored');

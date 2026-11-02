@@ -65,13 +65,13 @@ export type CloudView = {
 };
 export type SlapSuit = 'heart' | 'star' | 'moon' | 'drop';
 export type SlapCard = { value: number | 'W'; suit: SlapSuit };
-export type SlapSettings = { startingCards: number; penaltyCards: number; pace: 'manual' | 1200 | 1000 | 800; callMode: boolean };
+export type SlapSettings = { startingCards: number; pace: 'manual' | 1200 | 1000 | 800; callMode: boolean };
 export type SlapPhase = 'ready' | 'playing' | 'resolving' | 'roundOver' | 'matchOver';
 export type SlapView = {
   game: 'slapcount'; phase: SlapPhase; starter: string; turn: string; round: number; format: 'quick' | 'bestOf3';
   settings: SlapSettings; deckSizes: Record<string, number>; myDeckSize: number; opponentDeckSize: number;
   pileSize: number; topCards: SlapCard[]; count: number | null; currentCardCount: number | null; currentCardId: number; currentCardSentAt: number;
-  matchWindowOpen: boolean; decisionPending: boolean; slapPossible: boolean; slapLockouts: Record<string, number>;
+  matchWindowOpen: boolean; decisionPending: boolean; currentCardMatched: boolean; slapPossible: boolean; slapLockouts: Record<string, number>;
   matchScore: Record<string, number>; laidCards: number; readyDeadline?: number; resolveDeadline?: number;
   roundWinner?: string; matchWinner?: string; draw?: boolean; paused: boolean; remainingMs?: number;
   lastReaction?: { player: string; emoji: string; at: number };

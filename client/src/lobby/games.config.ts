@@ -33,9 +33,8 @@ export const gameRegistry: GameTicketConfig[] = [
     { id: 'layoutMode', label: 'Re-scatter', type: 'select', default: 'hunt', options: [{ label: 'Every hunt', value: 'hunt' }, { label: 'Every round', value: 'round' }] },
     { id: 'huntTimeoutSeconds', label: 'Hunt timeout', type: 'select', default: 45, options: options([15,30,45,60], value => `${value} seconds`) },
   ], art: TicketIllustration },
-  { id: 'slapcount', title: 'Slap Count', tagline: 'A LITTLE REFLEX RACE · 2 PLAYERS', description: 'Take turns laying cards. When the number matches the count, slap first!', accent: 'var(--periwinkle)', formats: ['quick','bestOf3'], settings: [
+  { id: 'slapcount', title: 'Slap Count', tagline: 'A LITTLE REFLEX RACE · 2 PLAYERS', description: 'Count from 1 to 10. Slap on a match, a W, or matching cards in a row!', accent: 'var(--periwinkle)', formats: ['quick','bestOf3'], settings: [
     { id: 'startingCards', label: 'Starting cards', type: 'select', default: 20, options: options(Array.from({ length: 11 }, (_, i) => i + 10)) },
-    { id: 'penaltyCards', label: 'Wrong slap', type: 'select', default: 2, options: options([1,2,3], value => `${value} card${value === 1 ? '' : 's'}`) },
     { id: 'pace', label: 'Turn pace', type: 'select', default: 'manual', options: [{ label: 'Manual lay', value: 'manual' }, { label: 'Auto · 1.2 sec', value: 1200 }, { label: 'Auto · 1 sec', value: 1000 }, { label: 'Auto · 0.8 sec', value: 800 }] },
     { id: 'callMode', label: 'Call mode · hide count', type: 'checkbox', default: false },
   ], art: TicketIllustration },

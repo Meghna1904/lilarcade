@@ -43,8 +43,6 @@ export function SlapCountGame({ game, self, players, socket }: Props) {
   const callMode = game.settings.callMode;
   const lockRemaining = Math.max(0, (game.slapLockouts[self] ?? 0) - clock);
   const canLay = game.phase === 'playing' && !game.paused && self === game.turn && !ended;
-  // A slap is allowed on any live pile; the server applies the configured penalty when it is not a match.
-  const canSlap = game.phase === 'playing' && !game.paused && game.pileSize > 0 && game.slapPossible && !locked;
   const voiceSupported = typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
   const liveEvent = laidEvent && laidEvent.cardId > game.currentCardId && game.phase === 'playing'
     ? laidEvent
@@ -56,6 +54,10 @@ export function SlapCountGame({ game, self, players, socket }: Props) {
   const displayedPile = eventIsAhead && liveEvent
     ? [...game.topCards, liveEvent.card].slice(-3)
     : game.topCards;
+  // Wrong slaps should register too; only matched cards outside their slap window are unavailable.
+  // Wait for room state when the newly laid card event arrives just ahead of it.
+  const canSlap = game.phase === 'playing' && !game.paused && !eventIsAhead && game.pileSize > 0 &&
+    (!game.currentCardMatched || game.slapPossible || game.decisionPending) && !locked;
   const turnLine = game.paused ? 'Waiting for your person to reconnect…'
     : game.phase === 'ready' ? `Ready in ${Math.max(1, Math.ceil(((game.readyDeadline ?? clock) - clock) / 1000))}…`
       : game.phase === 'resolving' ? resolvedEvent?.winner === self ? 'You won the pile!' : `${opponentName} won the pile!`
@@ -121,9 +123,16 @@ export function SlapCountGame({ game, self, players, socket }: Props) {
     lay();
   }, [canLay, lay, unlock]);
   const onSlap = useCallback(() => {
-    if (!canSlap || !game.currentCardId || lastSlapCard.current === game.currentCardId) return;
-    lastSlapCard.current = game.currentCardId;
-    unlock(); play('slapHit'); navigator.vibrate?.(18); slap();
+    const cardId = game.currentCardId;
+    if (!canSlap || !cardId || lastSlapCard.current === cardId) return;
+    lastSlapCard.current = cardId;
+    unlock(); play('slapHit'); navigator.vibrate?.(18);
+    slap(result => {
+      if (result === 'ignored' || result === 'rejected') {
+        if (lastSlapCard.current === cardId) lastSlapCard.current = 0;
+      }
+    });
+    window.setTimeout(() => { if (lastSlapCard.current === cardId) lastSlapCard.current = 0; }, 900);
   }, [canSlap, game.currentCardId, play, slap, unlock]);
   const onKeyDown = (event: KeyboardEvent) => {
     if (modal || event.repeat || event.ctrlKey || event.altKey || event.metaKey) return;
@@ -230,21 +239,19 @@ function Modal({ modal, onClose, voiceSupported, voiceCallOut, setVoice, muted, 
   return <div className="slap-modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }}>
     <section className="slap-modal" role="dialog" aria-modal="true" aria-labelledby="slap-modal-title">
       <button type="button" className="slap-modal-close" onClick={onClose} aria-label="Close">×</button>
-      {modal === 'help' ? <><span className="eyebrow">THE QUICK VERSION</span><h2 id="slap-modal-title">How to play</h2><ol><li>Take turns tapping your pile to lay one card.</li><li>Count out loud from 1 to 10 as cards land. Then start again at 1.</li><li>Slap when the card matches the called number, when a <b>W</b> wild card appears, or when both players lay the same number in a row. First slap takes the whole pile.</li><li>A wrong slap hands the selected number of cards to your person.</li><li>Run out of cards on your turn and the round is over.</li></ol><p>Keyboard: <kbd>Enter</kbd> or <kbd>L</kbd> lays a card · <kbd>Space</kbd> slaps.</p></>
-        : <><span className="eyebrow">MAKE IT YOURS</span><h2 id="slap-modal-title">Game settings</h2><p className="slap-modal-note">Call mode is {callMode ? 'on · count out loud together' : 'off'} · {muted ? 'sound is muted' : 'sound is on'}.</p>{voiceSupported && <label className="slap-voice-option"><span><b>Voice call-out</b><small>{callMode ? 'Turn call mode off to use spoken numbers.' : 'Speak each number as its card lands.'}</small></span><input type="checkbox" checked={voiceCallOut} disabled={callMode} onChange={event => setVoice(event.target.checked)} /></label>}<p className="slap-modal-note">Voice uses your browser’s speech service and never changes game timing.</p></>}
+      {modal === 'help' ? <><span className="eyebrow">THE QUICK VERSION</span><h2 id="slap-modal-title">How to play</h2><ol><li>Tap your face-down pile on the left to put down one card.</li><li>Call the numbers from 1 to 10 as cards land, then start again at 1.</li><li>Slap when a card matches the called number, a <b>W</b> appears, or two cards in a row have the same number. The quickest slap takes the whole pile.</li><li>A wrong slap gives your person 2 cards.</li><li>If your turn comes and you have no cards left, you lose the round.</li></ol><p>Keyboard: <kbd>Enter</kbd> or <kbd>L</kbd> lays a card · <kbd>Space</kbd> slaps.</p></>
+        : <><span className="eyebrow">MAKE IT YOURS</span><h2 id="slap-modal-title">Game settings</h2><p className="slap-modal-note">Call mode is {callMode ? 'on · count out loud together' : 'off'} · {muted ? 'sound is muted' : 'sound is on'}.</p>{voiceSupported && <label className="slap-voice-option"><span><b>Voice call-out</b><small>{callMode ? 'Turn call mode off to use spoken numbers.' : 'Speak each number as its card lands.'}</small></span><input type="checkbox" checked={voiceCallOut} disabled={callMode} onChange={event => setVoice(event.target.checked)} /></label>}<p className="slap-modal-note">The server adjusts for connection lag when deciding who slapped first.</p></>}
     </section>
   </div>;
 }
 
 export function SlapCountLobbyCard({ onStart }: { onStart: (format: 'quick'|'bestOf3', settings: SlapSettings) => void }) {
   const [startingCards, setStartingCards] = useState(20);
-  const [penaltyCards, setPenaltyCards] = useState(2);
   const [pace, setPace] = useState<SlapSettings['pace']>('manual');
   const [callMode, setCallMode] = useState(false);
-  const settings: SlapSettings = { startingCards, penaltyCards, pace, callMode };
+  const settings: SlapSettings = { startingCards, pace, callMode };
   return <article className="game-card slap-count-card"><div className="card-art slap-count-art"><span>✋</span><b>1</b><i>☾</i><strong>W</strong></div><div className="card-content"><div className="game-label">A LITTLE REFLEX RACE · 2 PLAYERS</div><h3>Slap Count</h3><p>Count 1–10. Slap a matching number, a W, or two matching cards in a row!</p><div className="slap-lobby-settings">
     <label>Starting cards<select value={startingCards} onChange={e=>setStartingCards(Number(e.target.value))}>{Array.from({length:11},(_,i)=><option key={i} value={i+10}>{i+10}</option>)}</select></label>
-    <label>Wrong slap<select value={penaltyCards} onChange={e=>setPenaltyCards(Number(e.target.value))}><option value="1">1 card</option><option value="2">2 cards</option><option value="3">3 cards</option></select></label>
     <label>Turn pace<select value={pace} onChange={e=>setPace(e.target.value==='manual'?'manual':Number(e.target.value) as 1200|1000|800)}><option value="manual">Manual lay (default)</option><option value="1200">Auto · 1.2 sec</option><option value="1000">Auto · 1.0 sec</option><option value="800">Auto · 0.8 sec</option></select></label>
     <label className="slap-call-toggle"><input type="checkbox" checked={callMode} onChange={e=>setCallMode(e.target.checked)} /> Call mode · hide count</label>
   </div><div className="card-actions"><button className="button primary" onClick={()=>onStart('quick',settings)}>Quick round <span>→</span></button><button className="button text-button" onClick={()=>onStart('bestOf3',settings)}>Best of 3</button></div></div></article>;

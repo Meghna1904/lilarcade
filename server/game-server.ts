@@ -10,7 +10,7 @@ import type { SlapMove } from '@arcade/shared';
 import { backToLobby, cloudMove, cupsGuess, cupsHint, cupsLock, cupsReact, disconnect, enterRoom, lobbyView, makeGuess, nextCloudRound, nextHangman, nextSlapRound, playerFor, poisonForcedLoss, poisonLock, poisonPick, poisonReact, poisonTap, poisonTimeout, nextPoisonRound, reaction, roomForSocket, setHangman, slapCompleteResolve, slapMove, slapResolveWindow, slapStartPlaying, startGame, markSlapCardVisible, updatePlayerDoodle } from './rooms.js';
 import { checkForcedLoss, legalTiles } from './games/poison.js';
 import { clearLockout, completeSwap, pauseTimers, resumeTimers, timeoutCall, timeoutHunt, type CloudGame } from './games/cloud.js';
-import { completeResolve, pauseTimers as pauseSlapTimers, recordRtt, resumeTimers as resumeSlapTimers, type SlapCountGame } from './games/slapcount.js';
+import { completeResolve, pauseTimers as pauseSlapTimers, recordOneWayLatency, resumeTimers as resumeSlapTimers, type SlapCountGame } from './games/slapcount.js';
 import { refreshSupabaseSession } from './utils/supabase/middleware.js';
 import { isPlayerPersistenceConfigured, savePlayer } from './utils/supabase/admin.js';
 
@@ -179,7 +179,7 @@ function scheduleSlapTimer(room: NonNullable<ReturnType<typeof roomForSocket>>) 
 
 function handleSlap(room: NonNullable<ReturnType<typeof roomForSocket>>, player: string, move: SlapMove, ack?: (result: 'pending'|'ignored'|'wrong'|'rejected') => void) {
   const result = slapMove(room, player, move);
-  if (result.error) { io.to(room.players.find(entry => entry.id === player)?.socketId ?? '').emit('actionError', result.error); return; }
+  if (result.error) { ack?.('rejected'); io.to(room.players.find(entry => entry.id === player)?.socketId ?? '').emit('actionError', result.error); return; }
   ack?.(result.status ?? (result.changed ? 'pending' : 'rejected'));
   if (!result.changed) return;
   emitSlapEvent(room, result.event);
@@ -288,7 +288,7 @@ io.on('connection', socket => {
     pending!.delete(pingId);
     const room = roomForSocket(socket.id); const player = room && playerFor(room, socket.id);
     const game = room?.game;
-    if (player && game && 'slapCount' in game) recordRtt(game, player.id, (Date.now() - sentAt) / 2);
+    if (player && game && 'slapCount' in game) recordOneWayLatency(game, player.id, (Date.now() - sentAt) / 2);
   });
   socket.on('slap:layCard', () => {
     const room = roomForSocket(socket.id); const player = room && playerFor(room, socket.id);

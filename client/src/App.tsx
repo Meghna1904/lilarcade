@@ -7,7 +7,7 @@ import { PoisonGame, PoisonLobbyCard } from './components/games/poison/PoisonGam
 import { CloudGame, CloudLobbyCard } from './components/games/cloud/CloudGame';
 import { FloatingReactions } from './components/reactions/FloatingReactions';
 import { ReactionBar } from './components/reactions/ReactionBar';
-import { SlapCountGame, SlapCountLobbyCard } from './components/games/slapcount/SlapCountGame';
+import { SlapCountGame } from './components/games/slapcount/SlapCountGame';
 import { GameScreenErrorBoundary } from './components/games/GameScreenErrorBoundary';
 import { Scene, SceneSettings } from './scene/Scene';
 import { sceneConfig } from './scene/config';
@@ -39,7 +39,7 @@ function startLobbyGame(socket: ArcadeSocket, id: LobbyGameId, format: string, s
   if (id === 'cups') socket.emit('startGame', { game: 'cups', format: format as 'quick' | 'bestOf3', cups: { cupCount: Number(setting(settings, 'cupCount', 5)), maxGuesses: Number(setting(settings, 'maxGuesses', 8)), hintEnabled: Boolean(setting(settings, 'hintEnabled', false)) } });
   if (id === 'poison') socket.emit('startGame', { game: 'poison', format: format as 'quick' | 'bestOf3' | 'bestOf5', poison: { gridSize: Number(setting(settings, 'gridSize', 4)) as 3 | 4 | 5, timerEnabled: Boolean(setting(settings, 'timerEnabled', false)), confirmMode: Boolean(setting(settings, 'confirmMode', true)), warmCold: Boolean(setting(settings, 'warmCold', false)), tieMode: setting(settings, 'tieMode', 'replay') as 'replay' | 'draw' } });
   if (id === 'cloud') socket.emit('startGame', { game: 'cloud', format: format as 'quick' | 'bestOf3', cloud: { targetBoxes: Number(setting(settings, 'targetBoxes', 100)) as 30 | 50 | 100, catchBonus: Number(setting(settings, 'catchBonus', 1)) as 0 | 1 | 2 | 3, layoutMode: setting(settings, 'layoutMode', 'hunt') as 'hunt' | 'round', huntTimeoutSeconds: Number(setting(settings, 'huntTimeoutSeconds', 45)) as 15 | 30 | 45 | 60 } });
-  if (id === 'slapcount') socket.emit('startGame', { game: 'slapcount', format: format as 'quick' | 'bestOf3', slapCount: { startingCards: Number(setting(settings, 'startingCards', 20)), penaltyCards: Number(setting(settings, 'penaltyCards', 2)), pace: setting(settings, 'pace', 'manual') as 'manual' | 1200 | 1000 | 800, callMode: Boolean(setting(settings, 'callMode', false)) } });
+  if (id === 'slapcount') socket.emit('startGame', { game: 'slapcount', format: format as 'quick' | 'bestOf3', slapCount: { startingCards: Number(setting(settings, 'startingCards', 20)), pace: setting(settings, 'pace', 'manual') as 'manual' | 1200 | 1000 | 800, callMode: Boolean(setting(settings, 'callMode', false)) } });
 }
 
 export default function App() {

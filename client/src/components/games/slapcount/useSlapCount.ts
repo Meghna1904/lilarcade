@@ -56,9 +56,9 @@ export function useSlapCount(game: SlapView, self: string, socket: SlapSocket) {
   }, [resolvedEvent]);
 
   const lay = useCallback(() => socket.emit('slap:layCard'), [socket]);
-  const slap = useCallback(() => {
+  const slap = useCallback((onResult?: (result: 'pending'|'ignored'|'wrong'|'rejected') => void) => {
     if (game.phase !== 'playing' || game.paused || !game.pileSize || !game.currentCardId) return;
-    socket.emit('slap:slap', { cardId: game.currentCardId });
+    socket.emit('slap:slap', { cardId: game.currentCardId }, result => onResult?.(result));
   }, [game.currentCardId, game.decisionPending, game.slapPossible, game.paused, game.phase, game.pileSize, socket]);
   const locked = (game.slapLockouts[self] ?? 0) > clock;
   return { rttMs, clock, lay, slap, locked, laidEvent, resolvedEvent };

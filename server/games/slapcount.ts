@@ -3,7 +3,7 @@ import type { SlapCard, SlapMove, SlapSettings, SlapView } from '@arcade/shared'
 import { isReactionId } from '@arcade/shared';
 
 type InternalCard = SlapCard & { uid: number };
-type Candidate = { player: string; arrivalAt: number; rttMs: number };
+type Candidate = { player: string; arrivalAt: number; oneWayMs: number };
 export type SlapCountGame = {
   slapCount: true; phase: SlapView['phase']; playerA: string; playerB: string; decks: Record<string, InternalCard[]>;
   pile: InternalCard[]; turn: string; starter: string; matchStarter: string; round: number; format: 'quick'|'bestOf3'; settings: SlapSettings;
@@ -14,7 +14,7 @@ export type SlapCountGame = {
   resolveDeadline: number; resolveRemaining: number; autoLayDeadline: number; autoLayRemaining: number;
   matchWindowRemaining: number; decisionRemaining: number;
   matchScore: Record<string, number>; roundWinner: string|undefined; matchWinner: string|undefined; draw: boolean;
-  rttSamples: Record<string, number[]>;
+  oneWaySamples: Record<string, number[]>;
   paused: boolean; lastReaction: { player: string; emoji: string; at: number }|undefined;
   resolution: { cardId: number; result: 'pile'|'wrong'; winner?: string; loser?: string; penalty?: number }|undefined;
 };
@@ -24,6 +24,8 @@ export type SlapResult = { changed: boolean; error?: string; status?: 'pending'|
 const READY_MS = 3_000;
 const MATCH_MS = 3_000;
 const DECISION_MS = 150;
+const MAX_DECISION_MS = 650;
+const MAX_LATENCY_COMPENSATION_MS = 500;
 const RESOLVE_MS = 1_200;
 const MIN_LAY_MS = 600;
 const MAX_LAID = 300;
@@ -42,8 +44,8 @@ function other(g: SlapCountGame, player: string) { return player === g.playerA ?
 function buildDeck(): InternalCard[] {
   const suits: SlapCard['suit'][] = ['heart','star','moon','drop'];
   return suits.flatMap((suit, suitIndex) => [
-    ...Array.from({ length: 9 }, (_, index) => ({ uid: suitIndex * 10 + index + 1, value: index + 1, suit })),
-    { uid: suitIndex * 10 + 10, value: 'W' as const, suit },
+    ...Array.from({ length: 10 }, (_, index) => ({ uid: suitIndex * 11 + index + 1, value: index + 1, suit })),
+    { uid: suitIndex * 11 + 11, value: 'W' as const, suit },
   ]);
 }
 function makeRound(g: SlapCountGame, starter: string, round: number, score: Record<string, number>, now: number, cardIdBase: number) {
@@ -64,7 +66,7 @@ export function createGame(playerA: string, playerB: string, starter: string, fo
     currentCardCount: 1, currentCard: undefined, currentCardMatched: false, laidCards: 0, lastLayAt: 0,
     matchWindowDeadline: 0, matchWindowOpen: false, decisionDeadline: 0, decisionPending: false, candidates: [], visibleCardIds: {},
     slapLockouts: {}, slapTimes: {}, readyDeadline: 0, readyRemaining: 0, resolveDeadline: 0, resolveRemaining: 0,
-    autoLayDeadline: 0, autoLayRemaining: 0, matchWindowRemaining: 0, decisionRemaining: 0, matchScore: {}, roundWinner: undefined, matchWinner: undefined, rttSamples: {},
+    autoLayDeadline: 0, autoLayRemaining: 0, matchWindowRemaining: 0, decisionRemaining: 0, matchScore: {}, roundWinner: undefined, matchWinner: undefined, oneWaySamples: {},
     draw: false, paused: false, lastReaction: undefined, resolution: undefined,
   } satisfies SlapCountGame;
   makeRound(g, starter, round, score, now, cardIdBase);
@@ -131,17 +133,22 @@ export function markCardVisible(g: SlapCountGame, player: string) {
   if (g.currentCardId) g.visibleCardIds[player] = g.currentCardId;
 }
 
-export function recordRtt(g: SlapCountGame, player: string, rttMs: number) {
-  if ((player !== g.playerA && player !== g.playerB) || !Number.isFinite(rttMs)) return;
-  g.rttSamples[player] = [...(g.rttSamples[player] ?? []), Math.max(0, Math.min(2_000, rttMs))].slice(-7);
+export function recordOneWayLatency(g: SlapCountGame, player: string, oneWayMs: number) {
+  if ((player !== g.playerA && player !== g.playerB) || !Number.isFinite(oneWayMs)) return;
+  g.oneWaySamples[player] = [...(g.oneWaySamples[player] ?? []), Math.max(0, Math.min(2_000, oneWayMs))].slice(-7);
 }
 
-function medianRtt(g: SlapCountGame, player: string) {
-  const values = [...(g.rttSamples[player] ?? [])].sort((a,b) => a-b);
+function medianOneWayLatency(g: SlapCountGame, player: string) {
+  const values = [...(g.oneWaySamples[player] ?? [])].sort((a,b) => a-b);
   return values[Math.floor(values.length / 2)] ?? 0;
 }
 
-export function slap(g: SlapCountGame, player: string, cardId: number, rttMs = 0, now = Date.now()): SlapResult {
+function decisionWindowMs(g: SlapCountGame) {
+  const latencyGap = Math.abs(medianOneWayLatency(g, g.playerA) - medianOneWayLatency(g, g.playerB));
+  return Math.min(MAX_DECISION_MS, DECISION_MS + latencyGap);
+}
+
+export function slap(g: SlapCountGame, player: string, cardId: number, oneWayMs = 0, now = Date.now()): SlapResult {
   if (g.paused || g.phase !== 'playing') return { changed: false, status: 'rejected' };
   if (player !== g.playerA && player !== g.playerB) return { changed: false, status: 'rejected' };
   if (!Number.isInteger(cardId) || cardId < 1 || cardId > g.currentCardId) return { changed: false, status: 'rejected' };
@@ -152,23 +159,23 @@ export function slap(g: SlapCountGame, player: string, cardId: number, rttMs = 0
   if (times.length >= 6) return { changed: false, status: 'ignored' };
   times.push(now); g.slapTimes[player] = times;
   if (!g.currentCardMatched) {
-    const deck = g.decks[player]; const penalty = Math.min(g.settings.penaltyCards, deck.length);
+    const deck = g.decks[player]; const penalty = Math.min(2, deck.length);
     const moved = deck.splice(0, penalty); g.decks[other(g, player)].push(...moved);
     g.slapLockouts[player] = now + 1_000;
     g.resolution = { cardId, result: 'wrong', loser: player, penalty };
     return { changed: true, status: 'wrong', event: g.resolution };
   }
   if (g.candidates.some(candidate => candidate.player === player)) return { changed: false, status: 'ignored' };
-  const boundedRtt = Number.isFinite(rttMs) ? Math.max(0, Math.min(60_000, rttMs)) : 0;
-  g.candidates.push({ player, arrivalAt: now, rttMs: boundedRtt });
-  if (!g.decisionPending) { g.decisionPending = true; g.decisionDeadline = now + DECISION_MS; }
+  const boundedOneWay = Number.isFinite(oneWayMs) ? Math.max(0, Math.min(2_000, oneWayMs)) : 0;
+  g.candidates.push({ player, arrivalAt: now, oneWayMs: boundedOneWay });
+  if (!g.decisionPending) { g.decisionPending = true; g.decisionDeadline = now + decisionWindowMs(g); }
   return { changed: true, status: 'pending' };
 }
 
 export function resolveWindow(g: SlapCountGame, now = Date.now()): SlapResult {
   if (g.paused || g.phase !== 'playing') return { changed: false };
   if (g.decisionPending && now >= g.decisionDeadline) {
-    const adjusted = g.candidates.map(candidate => ({ ...candidate, adjusted: candidate.arrivalAt - g.currentCardSentAt - Math.min(candidate.rttMs / 2, 150) }));
+    const adjusted = g.candidates.map(candidate => ({ ...candidate, adjusted: candidate.arrivalAt - g.currentCardSentAt - Math.min(candidate.oneWayMs, MAX_LATENCY_COMPENSATION_MS) }));
     adjusted.sort((a, b) => a.adjusted - b.adjusted);
     const best = adjusted[0];
     const tied = adjusted.filter(candidate => candidate.adjusted - best.adjusted <= 20);
@@ -231,7 +238,7 @@ export function getViewFor(g: SlapCountGame, player: string, now = Date.now()): 
     topCards: g.pile.slice(-3).map(({ value, suit }) => ({ value, suit })), count: g.settings.callMode ? null : g.count,
     currentCardId: g.currentCardId, currentCardSentAt: g.currentCardSentAt,
     currentCardCount: g.settings.callMode ? null : g.currentCardCount,
-    matchWindowOpen: g.matchWindowOpen && !g.decisionPending, decisionPending: g.decisionPending,
+    matchWindowOpen: g.matchWindowOpen && !g.decisionPending, decisionPending: g.decisionPending, currentCardMatched: g.currentCardMatched,
     slapPossible: g.currentCardMatched && g.matchWindowOpen && !g.decisionPending,
     slapLockouts: Object.fromEntries(Object.entries(g.slapLockouts).filter(([, deadline]) => deadline > now)),
     matchScore: { ...g.matchScore }, laidCards: g.laidCards,
@@ -248,6 +255,6 @@ export function handleMove(g: SlapCountGame, player: string, move: SlapMove, now
     g.lastReaction = { player, emoji: move.emoji, at: now }; return { changed: true };
   }
   if (move.type === 'slap:layCard') return layCard(g, player, now);
-  if (move.type === 'slap:slap') return slap(g, player, move.cardId, medianRtt(g, player), now);
+  if (move.type === 'slap:slap') return slap(g, player, move.cardId, medianOneWayLatency(g, player), now);
   return { changed: false };
 }
