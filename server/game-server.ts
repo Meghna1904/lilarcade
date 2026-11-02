@@ -7,7 +7,7 @@ import { Server } from 'socket.io';
 import type { ClientToServerEvents, ServerToClientEvents } from '@arcade/shared';
 import type { CloudMove } from '@arcade/shared';
 import type { SlapMove } from '@arcade/shared';
-import { backToLobby, cloudMove, cupsGuess, cupsHint, cupsLock, cupsReact, disconnect, enterRoom, lobbyView, makeGuess, nextCloudRound, nextHangman, nextSlapRound, playerFor, poisonForcedLoss, poisonLock, poisonPick, poisonReact, poisonTap, poisonTimeout, nextPoisonRound, reaction, roomForSocket, setHangman, slapCompleteResolve, slapMove, slapResolveWindow, slapStartPlaying, startGame, markSlapCardVisible, updatePlayerDoodle } from './rooms.js';
+import { backToLobby, cloudMove, cupsGuess, cupsHint, cupsLock, cupsReact, disconnect, enterRoom, lobbyView, makeGuess, nextCloudRound, nextHangman, nextSlapRound, playerFor, poisonForcedLoss, poisonLock, poisonPick, poisonReact, poisonTap, poisonTimeout, nextPoisonRound, reaction, roomForSocket, setHangman, slapCompleteResolve, slapMove, slapResolveWindow, slapStartPlaying, startGame, markSlapCardVisible, updatePlayerDoodle, surpriseAnswer, surpriseNextPrompt } from './rooms.js';
 import { checkForcedLoss, legalTiles } from './games/poison.js';
 import { clearLockout, completeSwap, pauseTimers, resumeTimers, timeoutCall, timeoutHunt, type CloudGame } from './games/cloud.js';
 import { completeResolve, pauseTimers as pauseSlapTimers, recordRtt, resumeTimers as resumeSlapTimers, type SlapCountGame } from './games/slapcount.js';
@@ -307,6 +307,8 @@ io.on('connection', socket => {
   });
   socket.on('slap:nextRound', () => action((r,p) => nextSlapRound(r,p)));
   socket.on('slap:backToLobby', () => action(r => backToLobby(r)));
+  socket.on('surprise:answer', ({ answer, prediction }) => action((r, p) => surpriseAnswer(r, p, answer, prediction)));
+  socket.on('surprise:nextPrompt', () => action((r, p) => surpriseNextPrompt(r, p)));
   socket.on('backToLobby', () => action(r => backToLobby(r)));
   socket.on('disconnect', () => {
     pendingSlapPings.delete(socket.id);
