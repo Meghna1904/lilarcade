@@ -1,0 +1,39 @@
+.poison-app-shell{box-sizing:border-box;width:100%;max-width:none;height:100dvh;min-height:100svh;margin:0;padding:env(safe-area-inset-top) max(env(safe-area-inset-right),clamp(12px,2.5vw,36px)) env(safe-area-inset-bottom) max(env(safe-area-inset-left),clamp(12px,2.5vw,36px));overflow:hidden;display:grid;grid-template-rows:auto minmax(0,1fr)}
+.poison-app-shell>.topbar{min-height:0}
+.poison-game-layout{display:grid;grid-template-columns:minmax(120px,1fr) minmax(0,880px) minmax(120px,1fr);align-items:stretch;gap:clamp(10px,2vw,28px);width:100%;height:100%;min-width:0;min-height:0;margin:0 auto;padding:clamp(8px,1.5vh,16px) 0}
+.poison-game-main{display:grid;grid-template-rows:auto minmax(0,1fr);min-width:0;min-height:0}
+.poison-game-main .game-title-row{gap:clamp(7px,1.2vw,17px);margin:0 0 clamp(5px,1vh,12px)}
+.poison-panel{position:relative;display:flex;flex-direction:column;min-width:0;min-height:0;height:100%;padding:clamp(10px,1.8vh,22px) clamp(10px,2vw,26px);overflow:hidden}
+.poison-panel>.role-line{flex:none}
+.poison-stage{display:grid;grid-template-rows:auto auto auto minmax(0,1fr) auto;align-items:center;justify-items:center;gap:clamp(2px,.7vh,7px);width:100%;max-width:520px;height:100%;min-width:0;min-height:0;margin:0 auto;text-align:center}
+.poison-stage h2,.poison-turn-banner h2{margin:0;font-size:clamp(20px,3.5vh,27px)}
+.poison-stage>p{margin:0 auto;max-width:380px;font-size:clamp(10px,1.5vh,13px);line-height:1.35}
+.poison-stage .candy-pick-count{font-size:clamp(9px,1.35vh,12px)}
+.poison-stage>.candy-tray{width:min(100%,48vh,480px);height:auto;max-height:100%;min-height:0;aspect-ratio:1;margin:0 auto;padding:clamp(5px,1vh,10px);gap:clamp(4px,.8vh,9px);border-radius:clamp(18px,4vh,34px)}
+.poison-stage>.button{min-height:clamp(44px,6.5vh,54px);margin:0}
+.poison-stage>.waiting-game{align-self:center}
+.poison-stage>.poison-wait{min-height:0;padding:0}
+.poison-panel>.poison-turn-banner{flex:none;margin:clamp(4px,1vh,12px) auto 0}
+.poison-panel>.candy-tray{width:min(100%,44vh,480px);min-width:0;min-height:0;max-height:100%;flex:0 1 auto;margin:auto;padding:clamp(5px,1vh,10px)}
+.poison-panel>.poison-confirm{flex:none;margin:clamp(3px,.7vh,8px) auto 0}
+.poison-panel>.poison-result{position:absolute;z-index:5;top:50%;left:50%;width:min(94%,560px);max-height:calc(100% - 20px);margin:0;padding:clamp(8px,1.6vh,16px);transform:translate(-50%,-50%);border:1px solid #ffffff20;border-radius:20px;background:#2b2640f5;box-shadow:0 18px 50px #100d1b99}
+.poison-panel>.poison-result .result-sparkle{font-size:17px}
+.poison-panel>.poison-result h2{font-size:clamp(18px,2.8vh,24px)}
+.poison-panel>.poison-result p{font-size:clamp(10px,1.3vh,12px)}
+.poison-panel>.poison-result .poison-reveals{margin:6px 0;font-size:10px}
+.poison-panel>.poison-result .result-actions{gap:6px;margin-top:6px}
+.poison-panel>.poison-result .result-actions .button{min-height:38px;font-size:10px}
+.poison-panel>.sweet-tie-stage{width:min(100%,48vh,480px);max-height:calc(100% - 20px);flex:0 1 auto;margin:auto;aspect-ratio:1}
+.poison-player-rail{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:clamp(5px,1.1vh,12px);min-width:0;min-height:0;padding:8px;text-align:center}
+.poison-player-rail>.doodle-wrap{display:block;width:clamp(120px,17vh,230px);height:clamp(120px,17vh,230px);flex:none;overflow:visible}
+.poison-player-rail .doodle-image{width:100%;height:100%;object-fit:contain}
+.poison-player-ledge{width:min(100%,190px);height:8px;margin-top:-13px;border:1px solid #ffd98a42;border-radius:50%;background:linear-gradient(180deg,#514357,#302a40);box-shadow:0 5px 0 #17132688}
+.poison-player-rail>strong{max-width:100%;overflow:hidden;color:var(--text);font:500 clamp(15px,2.1vmin,22px)/1.1 var(--display);text-overflow:ellipsis;white-space:nowrap}
+.poison-player-badge{padding:5px 10px;border:1px solid #ffffff18;border-radius:99px;color:var(--muted);font-size:clamp(8px,1vmin,10px);font-weight:700;letter-spacing:.12em}
+.poison-player-badge.active{border-color:#ff9b8f66;background:#ff9b8f18;color:var(--peach)}
+.poison-player-wins{display:flex;align-items:center;gap:4px;color:var(--butter);font:500 14px var(--display)}
+.poison-player-wins i{font-style:normal}.poison-player-wins small,.poison-same-sweet{color:var(--muted);font:400 10px var(--display)}
+.poison-same-sweet{margin-top:4px;text-align:center}
+@media(max-width:900px){.poison-game-layout{grid-template-columns:minmax(62px,.2fr) minmax(0,1fr) minmax(62px,.2fr);gap:clamp(4px,1vw,10px)}.poison-player-rail{gap:5px;padding:4px}.poison-player-rail>.doodle-wrap{width:clamp(56px,9vh,90px);height:clamp(56px,9vh,90px)}.poison-player-ledge{width:64px;height:5px;margin-top:-8px}.poison-player-rail>strong{font-size:clamp(11px,1.5vmin,15px)}.poison-player-badge{padding:4px 6px;font-size:7px}.poison-player-wins{font-size:11px}.poison-player-wins small,.poison-same-sweet{font-size:8px}}
+@media(max-width:620px){.poison-app-shell{padding-left:max(env(safe-area-inset-left),10px);padding-right:max(env(safe-area-inset-right),10px)}.poison-app-shell>.topbar{height:58px}.poison-game-layout{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;gap:4px;padding:4px 0}.poison-player-rail{flex-direction:row;justify-content:flex-start;gap:8px;min-height:42px;padding:2px 6px;text-align:left}.poison-player-rail-left{grid-row:3}.poison-player-rail-right{grid-row:1}.poison-player-rail>.doodle-wrap{width:38px;height:38px}.poison-player-ledge,.poison-player-wins,.poison-same-sweet{display:none}.poison-player-rail>strong{flex:1;font-size:13px}.poison-player-badge{font-size:7px}.poison-game-main{grid-row:2}.poison-game-main .game-title-row{margin:0 0 4px}.poison-panel{padding:8px}.poison-stage{gap:2px}.poison-stage>p{font-size:10px}.poison-stage>.candy-tray{width:min(100%,42vh,480px);gap:4px;padding:5px}.poison-panel>.candy-tray{width:min(100%,40vh,480px)}.poison-stage h2{font-size:clamp(18px,3.2vh,23px)}}
+@media(max-height:560px) and (orientation:landscape){.poison-game-layout{grid-template-columns:minmax(58px,.18fr) minmax(0,1fr) minmax(58px,.18fr);gap:5px;padding:3px 0}.poison-player-rail>.doodle-wrap{width:52px;height:52px}.poison-player-ledge{display:none}.poison-player-rail>strong{font-size:11px}.poison-player-badge{padding:3px 5px;font-size:6px}.poison-player-wins{font-size:9px}.poison-player-wins small{font-size:7px}.poison-stage{grid-template-rows:auto auto auto minmax(0,1fr) auto;gap:1px}.poison-stage>p{font-size:9px}.poison-stage>.candy-tray{width:min(100%,60vh,480px);padding:4px;gap:3px}.poison-stage>.button{min-height:40px}}

@@ -8,6 +8,7 @@ import { useCandyAudio } from './useCandyAudio';
 import { ReactionBar } from '../../reactions/ReactionBar';
 import { DoodleResultPair } from '../../../doodles/DoodleResultPair';
 import { Doodle } from '../../../doodles/Doodle';
+import { GameDoodle } from '../../../doodles/GameDoodle';
 import { playerDoodleId } from '../../../doodles/playerDoodle';
 
 type ArcadeSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
@@ -121,8 +122,9 @@ export function PoisonGame({ game, self, players, socket, sameSweetMoments }: Pr
     socket.emit('poisonTapTile', { tile, turnNumber: game.turnNumber });
   };
 
-  return <section className="game-layout poison-game-layout">
-    <div className="game-main">
+  return <section className="poison-game-layout">
+    <PoisonPlayerRail side="left" player={players.find(player => player.id === self)} players={players} score={game.matchScore[self] ?? 0} sameSweetMoments={sameSweetMoments} active={game.phase === 'playing' && isMyTurn} badge={game.phase === 'setup' ? game.myLocked ? 'LOCKED' : 'PICKING' : ended ? 'ROUND OVER' : isMyTurn ? 'YOUR TURN' : 'WAITING'} playing={!ended} winner={ended && game.roundWinner === self}/>
+    <div className="game-main poison-game-main">
       <div className="game-title-row"><button className="back-link" onClick={() => socket.emit('backToLobby')}>← Lobby</button><div className="eyebrow">A LITTLE CANDY TRAP · ROUND {game.round}</div><span className="round-chip">{game.format === 'quick' ? 'QUICK ROUND' : `${scoreA} – ${scoreB}`}</span></div>
       <div className="panel poison-panel">
         <div className="role-line"><span className="role-pill">✿ POISON CANDY</span>{game.paused && <span className="paused-label">Paused while your person reconnects</span>}<button type="button" className="candy-mute" aria-pressed={muted} aria-label={muted ? 'Turn sounds on' : 'Mute sounds'} onClick={toggleMute}>{muted ? '♪̸ Sound off' : '♪ Sound on'}</button></div>
@@ -156,8 +158,23 @@ export function PoisonGame({ game, self, players, socket, sameSweetMoments }: Pr
         </>}
       </div>
     </div>
-    <aside className="game-side"><div className="panel poison-score"><div className="eyebrow">THIS MATCH</div><h3>Little score</h3>{[game.roles.playerA, game.roles.playerB].map(id => <div className="mini-score-row" key={id}><span>{id === self ? 'You' : opponentName}</span><b>{game.matchScore[id] ?? 0}</b></div>)}{game.format !== 'quick' && <div className="poison-pips">{Array.from({ length: game.format === 'bestOf5' ? 5 : 3 }, (_, index) => <i key={index} className={index < scoreA + scoreB ? 'filled' : ''} />)}</div>}<div className="same-sweet-stat"><span aria-hidden="true">♡</span> {sameSweetMoments} same-sweet moments</div></div><div className="panel pep-talk"><span>☾</span><p>{candyLines.thoughts[(game.round + (isMyTurn ? 0 : 1)) % candyLines.thoughts.length]}</p></div></aside>
+    <PoisonPlayerRail side="right" player={players.find(player => player.id === opponent)} players={players} score={game.matchScore[opponent] ?? 0} sameSweetMoments={sameSweetMoments} active={game.phase === 'playing' && !isMyTurn} badge={game.phase === 'setup' ? game.opponentLocked ? 'LOCKED' : 'PICKING' : ended ? 'ROUND OVER' : !isMyTurn ? 'YOUR TURN' : 'WAITING'} playing={!ended} winner={ended && game.roundWinner === opponent}/>
   </section>;
+}
+
+function PoisonPlayerRail({ side, player, players, score, sameSweetMoments, active, badge, playing, winner }: { side: 'left' | 'right'; player?: RoomView['players'][number]; players: RoomView['players']; score: number; sameSweetMoments: number; active: boolean; badge: string; playing: boolean; winner: boolean }) {
+  const name = player?.name ?? (side === 'left' ? 'You' : 'Your person');
+  return <aside className={`poison-player-rail poison-player-rail-${side}`} data-reaction-player={player?.id}>
+    <GameDoodle id={playerDoodleId(players, player)} expression={winner ? 'celebrating' : active ? 'thinking' : 'idle'} playing={playing} seed={`${player?.id}:${score}:${active}`} size="clamp(150px,17vh,240px)" flip={side === 'right'} name={name}/>
+    <div className="poison-player-ledge"/>
+    <strong>{name}</strong>
+    <span className={`poison-player-badge${active ? ' active' : ''}`}>{badge}</span>
+    <div className="poison-player-wins" aria-label={`${score} match wins`}>
+      {Array.from({ length: Math.min(score, 5) }, (_, index) => <i key={index}>│</i>)}
+      <small>{score} {score === 1 ? 'win' : 'wins'}</small>
+    </div>
+    {side === 'right' && <small className="poison-same-sweet">♡ {sameSweetMoments} same-sweet moments</small>}
+  </aside>;
 }
 
 function SweetTieReveal({ sharedTiles, gridSize, self, opponent, players, selfName, opponentName, round, onAgain, onLobby }: { sharedTiles: number[]; gridSize: number; self: string; opponent: string; players: RoomView['players']; selfName: string; opponentName: string; round: number; onAgain: () => void; onLobby: () => void }) {

@@ -16,7 +16,6 @@ import { DoodleResultPair } from './doodles/DoodleResultPair';
 import { preloadDoodleSet } from './doodles/manifest';
 import { playerDoodleId } from './doodles/playerDoodle';
 import { GameDoodle } from './doodles/GameDoodle';
-import { GameSideDoodles } from './doodles/GameSideDoodles';
 import { DoodlePicker, savedDoodleId } from './doodles/DoodlePicker';
 import './doodles/doodles.css';
 import { GameTicket } from './lobby/GameTicket';
@@ -130,13 +129,12 @@ export default function App() {
   const isQuietGame = !!game;
   const myDoodle = selectedDoodle || (room ? playerDoodleId(room.players, me) : 'her');
   const partnerDoodle = room ? playerDoodleId(room.players, room.players.find(player => player.id !== room.self)) : 'him';
-  return <main className={`app-shell ${!isQuietGame ? 'scene-active' : ''} ${game ? 'game-active' : ''} ${game?.game === 'cups' ? 'cups-app-shell' : ''} ${game?.game === 'hangman' ? 'hangman-app-shell' : ''} ${game?.game === 'cloud' ? 'cloud-app-shell' : ''} ${game?.game === 'slapcount' ? 'slap-app-shell' : ''}`}>
+  return <main className={`app-shell ${!isQuietGame ? 'scene-active' : ''} ${game ? 'game-active' : ''} ${game?.game === 'cups' ? 'cups-app-shell' : ''} ${game?.game === 'hangman' ? 'hangman-app-shell' : ''} ${game?.game === 'poison' ? 'poison-app-shell' : ''} ${game?.game === 'cloud' ? 'cloud-app-shell' : ''} ${game?.game === 'slapcount' ? 'slap-app-shell' : ''}`}>
     {!isQuietGame && <><Scene rooftop={!!room}/>{!room && <div className="scene-actors login-actors" style={{ '--doodle-left': `${sceneConfig.doodlePlacement.left}%`, '--doodle-right': `${sceneConfig.doodlePlacement.right}%`, '--doodle-bottom': `${100 - sceneConfig.doodlePlacement.baseline}%` } as React.CSSProperties}>
       <div className="scene-actor"><Doodle id={room ? myDoodle : 'sunny'} name={room ? me?.name : 'You'} size="clamp(58px, 9vw, 116px)"/><span>{room ? me?.name : 'you'}</span></div>
       <div className="scene-actor"><Doodle id={room ? partnerDoodle : 'moonbeam'} name={room ? other?.name : 'Your person'} size="clamp(58px, 9vw, 116px)"/><span>{room ? other?.name || 'your person' : 'your person'}</span></div>
     </div>}</>}
     <FloatingReactions reaction={game?.lastReaction} self={room?.self} />
-    {room && game && game.game !== 'slapcount' && game.game !== 'cups' && game.game !== 'hangman' && game.game !== 'cloud' && <GameSideDoodles players={displayPlayers} self={room.self} playing={game.phase === 'playing'}/>}
     <header className="topbar"><a className="brand" href="#home" onClick={e => { e.preventDefault(); if (room) socket.emit('backToLobby'); }}><span className="brand-icon">✦</span><span>our little <b>arcade</b></span></a><div className="topbar-actions">{room && !game && <button ref={doodlePickerTrigger} type="button" className="doodle-picker-trigger" onClick={() => setDoodlePickerOpen(true)}><Doodle id={myDoodle} size={56} crop name={me?.name}/><span>Pick your doodle</span></button>}<span className={`connection ${connected ? 'online' : ''}`}><i />{connected ? 'connected' : 'reconnecting…'}</span><SceneSettings muted={muted} onMute={toggleMute} onShareSkyChange={() => syncProfile()}/></div></header>
     {!room ? <section className="landing">
       <div className="landing-copy"><div className="eyebrow"><span>✧</span> JUST FOR TWO <span>✧</span></div><h1>A little place<br />for <em>us</em> to play.</h1><p>Pick a game, settle in, and make a tiny memory together.</p><div className="floaty floaty-one">☾</div><div className="floaty floaty-two">✦</div></div>
