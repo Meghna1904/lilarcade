@@ -27,13 +27,33 @@ export type HangmanView = {
   matchScore: Record<string, number>; roundWinner?: string; fullWord?: string; outcome?: 'win' | 'loss';
   paused: boolean; lastReaction?: { player: string; emoji: string; at: number };
 };
+export type PoisonPhase = 'setup' | 'playing' | 'roundOver' | 'matchOver';
+export type RoundEndReason = 'tapped' | 'forced' | 'forfeit';
+export type PoisonSettings = { gridSize: 3 | 4 | 5; format: MatchFormat; timerEnabled: boolean; confirmMode: boolean; warmCold: boolean };
+export type RevealedTile = { index: number; eatenBy: string; warm?: boolean };
+export type PoisonView = {
+  game: 'poison'; phase: PoisonPhase; gridSize: 3 | 4 | 5;
+  roles: { playerA: string; playerB: string };
+  round: number; format: MatchFormat; matchScore: Record<string, number>;
+  settings: PoisonSettings; paused: boolean; revealed: RevealedTile[];
+  myPick?: number; myLocked?: boolean; opponentLocked?: boolean; sameTileRejectedAt?: number;
+  myPoison?: number; currentTurn?: string; turnNumber?: number; turnDeadline?: number;
+  opponentPoison?: number; loser?: string; roundWinner?: string; endReason?: RoundEndReason;
+  lastReaction?: { player: string; emoji: string; at: number };
+};
+export type PoisonMove =
+  | { type: 'poison:pickTile'; tile: number }
+  | { type: 'poison:lockPick' }
+  | { type: 'poison:tapTile'; tile: number; turnNumber: number }
+  | { type: 'poison:react'; emoji: string }
+  | { type: 'poison:nextRound' };
 export type RoomView = {
-  self: string; players: PlayerSummary[]; status: string; game: HangmanView | CupsView | null;
+  self: string; players: PlayerSummary[]; status: string; game: HangmanView | CupsView | PoisonView | null;
   scoreboard: Scoreboard; error?: string;
 };
 export type ClientToServerEvents = {
   enter: (payload: { name: string; passcode: string; token: string }) => void;
-  startGame: (payload: { game: GameId; format: MatchFormat; cups?: Omit<CupsSettings, 'format'> }) => void;
+  startGame: (payload: { game: GameId; format: MatchFormat; cups?: Omit<CupsSettings, 'format'>; poison?: Omit<PoisonSettings, 'format'> }) => void;
   setHangmanWord: (payload: { word: string; hint: string }) => void;
   guessLetter: (payload: { letter: string }) => void;
   hangmanReaction: (payload: { emoji: string }) => void;
@@ -43,6 +63,11 @@ export type ClientToServerEvents = {
   cupsHint: (payload: { slot: number }, ack?: (error: string | null) => void) => void;
   cupsReaction: (payload: { emoji: string }, ack?: (error: string | null) => void) => void;
   cupsNextRound: (ack?: (error: string | null) => void) => void;
+  poisonPickTile: (payload: { tile: number }) => void;
+  poisonLockPick: () => void;
+  poisonTapTile: (payload: { tile: number; turnNumber: number }) => void;
+  poisonReact: (payload: { emoji: string }) => void;
+  poisonNextRound: () => void;
   backToLobby: () => void;
 };
 export type ServerToClientEvents = { roomState: (state: RoomView) => void; joinError: (message: string) => void; actionError: (message: string) => void };

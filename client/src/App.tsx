@@ -3,6 +3,7 @@ import { io, type Socket } from 'socket.io-client';
 import type { ClientToServerEvents, RoomView, ServerToClientEvents } from '@arcade/shared';
 import { arcadeConfig } from './config';
 import { CupsGame, CupsLobbyCard } from './components/games/cups/CupsGame';
+import { PoisonGame, PoisonLobbyCard } from './components/games/poison/PoisonGame';
 
 type ArcadeSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 const socketConnection = () => {
@@ -80,12 +81,12 @@ export default function App() {
         <div className="couple-card panel">{room.players.map((p, i) => <div className="person" key={p.id}><div className={`avatar avatar-${i}`}>{p.name[0]?.toUpperCase()}</div><div><b>{p.name}</b><small><i className={p.online ? 'dot online' : 'dot'} />{p.online ? 'here with you' : 'away for a moment'}</small></div></div>)}{!other && <div className="waiting-note">{room.status}</div>}</div>
       </section>
       {actionError && <div className="toast" role="status">{actionError}</div>}
-      {game?.game === 'hangman' ? <HangmanScreen game={game} self={room.self} players={room.players} socket={socket} word={word} setWord={setWord} hint={hint} setHint={setHint} /> : game?.game === 'cups' ? <CupsGame game={game} self={room.self} players={room.players} socket={socket} /> : <section className="lobby-grid">
+      {game?.game === 'hangman' ? <HangmanScreen game={game} self={room.self} players={room.players} socket={socket} word={word} setWord={setWord} hint={hint} setHint={setHint} /> : game?.game === 'cups' ? <CupsGame game={game} self={room.self} players={room.players} socket={socket} /> : game?.game === 'poison' ? <PoisonGame game={game} self={room.self} players={room.players} socket={socket} /> : <section className="lobby-grid">
         <div className="games-column"><div className="section-heading"><div><div className="eyebrow">CHOOSE YOUR LITTLE ADVENTURE</div><h2>What shall we play?</h2></div><span className="tiny-sparkle">✧ ✦ ✧</span></div>
           <div className="game-cards">
             <article className="game-card hangman-card"><div className="card-art hangman-art"><span>☁</span><span className="rope">⌁</span><span className="mini-face">◡</span><b>?</b></div><div className="card-content"><div className="game-label">WORD GAME · 2 PLAYERS</div><h3>Hangman</h3><p>A secret word, six guesses, and a very cute little fellow.</p><div className="card-actions"><button className="button primary" onClick={() => socket.emit('startGame', { game: 'hangman', format: 'quick' })}>Quick round <span>→</span></button><button className="button text-button" onClick={() => socket.emit('startGame', { game: 'hangman', format: 'bestOf3' })}>Best of 3</button></div></div></article>
             <CupsLobbyCard onStart={(format, cups) => socket.emit('startGame', { game: 'cups', format, cups })} />
-            <article className="game-card poison-card locked"><div className="card-art poison-art"><span>✿</span><span>?</span><span>✿</span></div><div className="card-content"><div className="game-label">A TINY BIT SNEAKY · 2 PLAYERS</div><h3>Poison Challenge</h3><p>Pick your poison and try not to find theirs.</p><button className="button soft" disabled>Coming soon <span>✦</span></button></div></article>
+            <PoisonLobbyCard onStart={(format, poison) => socket.emit('startGame', { game: 'poison', format, poison })} />
           </div>
           <div className="coming-row"><span>ON THE WAY</span><i>Uno Slap</i><i>Memory Duel</i><i>Draw & Guess</i></div>
         </div>

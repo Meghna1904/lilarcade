@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { Server } from 'socket.io';
 import type { ClientToServerEvents, ServerToClientEvents } from '@arcade/shared';
-import { backToLobby, cupsGuess, cupsHint, cupsLock, cupsReact, disconnect, enterRoom, lobbyView, makeGuess, nextHangman, playerFor, reaction, roomForSocket, setHangman, startGame } from './rooms.js';
+import { backToLobby, cupsGuess, cupsHint, cupsLock, cupsReact, disconnect, enterRoom, lobbyView, makeGuess, nextHangman, playerFor, poisonForcedLoss, poisonLock, poisonPick, poisonReact, poisonTap, poisonTimeout, nextPoisonRound, reaction, roomForSocket, setHangman, startGame } from './rooms.js';
+import { checkForcedLoss } from './games/poison.js';
 import { refreshSupabaseSession } from './utils/supabase/middleware.js';
 import { isPlayerPersistenceConfigured, savePlayer } from './utils/supabase/admin.js';
 
@@ -29,6 +30,34 @@ function publish(room: NonNullable<ReturnType<typeof roomForSocket>>) {
   for (const p of room.players) if (p.online) io.to(p.socketId).emit('roomState', lobbyView(room, p.id));
 }
 
+const poisonTimers = new Map<string, ReturnType<typeof setTimeout>>();
+function schedulePoisonTimer(room: NonNullable<ReturnType<typeof roomForSocket>>) {
+  const old = poisonTimers.get(room.key);
+  if (old) clearTimeout(old);
+  poisonTimers.delete(room.key);
+  const game = room.game;
+  if (!game || !('poisonA' in game) || game.phase !== 'playing') return;
+  if (game.paused) {
+    if (game.turnDeadline > 0) game.timerRemaining = Math.max(1, game.turnDeadline - Date.now());
+    game.turnDeadline = 0;
+    return;
+  }
+  const forced = checkForcedLoss(game);
+  if (!forced && !game.settings.timerEnabled) { game.turnDeadline = 0; return; }
+  if (game.timerRemaining > 0) {
+    game.turnDeadline = Date.now() + game.timerRemaining;
+    game.timerRemaining = 0;
+  } else if (!game.turnDeadline || game.turnDeadline <= Date.now()) game.turnDeadline = Date.now() + (forced ? 1500 : 20_000);
+  const deadline = game.turnDeadline;
+  poisonTimers.set(room.key, setTimeout(() => {
+    poisonTimers.delete(room.key);
+    if (room.game !== game || game.paused || game.phase !== 'playing' || game.turnDeadline !== deadline) return;
+    if (checkForcedLoss(game)) poisonForcedLoss(room); else poisonTimeout(room);
+    publish(room);
+    schedulePoisonTimer(room);
+  }, Math.max(0, deadline - Date.now())));
+}
+
 io.on('connection', socket => {
   socket.on('enter', async ({ name: rawName, passcode, token }) => {
     const name = rawName.trim().slice(0, 24);
@@ -49,6 +78,7 @@ io.on('connection', socket => {
         console.error('Could not save player identity to Supabase:', error);
       }
     }
+    schedulePoisonTimer(result.room);
     publish(result.room);
   });
 
@@ -64,12 +94,13 @@ io.on('connection', socket => {
       return;
     }
     const error = fn(room, player.id);
+    schedulePoisonTimer(room);
     publish(room);
     if (error) socket.emit('actionError', error);
     ack?.(error ?? null);
   };
 
-  socket.on('startGame', ({ game, format, cups }) => action((r, p) => startGame(r, p, game, format, cups)));
+  socket.on('startGame', ({ game, format, cups, poison }) => action((r, p) => startGame(r, p, game, format, cups, poison)));
   socket.on('setHangmanWord', ({ word, hint }) => action((r, p) => setHangman(r, p, word, hint)));
   socket.on('guessLetter', ({ letter }) => action((r, p) => makeGuess(r, p, letter)));
   socket.on('hangmanReaction', ({ emoji }) => action((r, p) => reaction(r, p, emoji)));
@@ -79,10 +110,15 @@ io.on('connection', socket => {
   socket.on('cupsHint', ({ slot }, ack) => action((r, p) => cupsHint(r, p, slot), ack));
   socket.on('cupsReaction', ({ emoji }, ack) => action((r, p) => cupsReact(r, p, emoji), ack));
   socket.on('cupsNextRound', ack => action((r, p) => nextHangman(r, p), ack));
+  socket.on('poisonPickTile', ({ tile }) => action((r, p) => poisonPick(r, p, tile)));
+  socket.on('poisonLockPick', () => action((r, p) => poisonLock(r, p)));
+  socket.on('poisonTapTile', ({ tile, turnNumber }) => action((r, p) => poisonTap(r, p, tile, turnNumber)));
+  socket.on('poisonReact', ({ emoji }) => action((r, p) => poisonReact(r, p, emoji)));
+  socket.on('poisonNextRound', () => action((r, p) => nextPoisonRound(r, p)));
   socket.on('backToLobby', () => action(r => backToLobby(r)));
   socket.on('disconnect', () => {
     const room = disconnect(socket.id);
-    if (room) publish(room);
+    if (room) { schedulePoisonTimer(room); publish(room); }
   });
 });
 
