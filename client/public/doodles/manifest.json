@@ -1,0 +1,10 @@
+[
+  { "id": "her", "displayName": "Her", "format": "webp", "fallbackId": "soft-heart", "expressions": ["idle", "happy", "celebrating", "shocked", "worried", "sad", "thinking", "smug", "sleepy", "wink"] },
+  { "id": "him", "displayName": "Him", "format": "webp", "fallbackId": "little-star", "expressions": ["idle", "happy", "celebrating", "shocked", "worried", "sad", "thinking", "smug", "sleepy", "wink"] },
+  { "id": "little-star", "displayName": "Little Star", "expressions": ["idle"] },
+  { "id": "moonbeam", "displayName": "Sleepy Moon", "expressions": ["idle"] },
+  { "id": "soft-heart", "displayName": "Soft Heart", "expressions": ["idle"] },
+  { "id": "cloud-puff", "displayName": "Cloud Puff", "expressions": ["idle"] },
+  { "id": "sunny-dot", "displayName": "Sunny Dot", "expressions": ["idle"] },
+  { "id": "sunny", "displayName": "Tiny Sprout", "expressions": ["idle"] }
+]

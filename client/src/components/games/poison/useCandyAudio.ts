@@ -73,6 +73,7 @@ export function useCandyAudio() {
       const next = !current;
       mutedRef.current = next;
       localStorage.setItem(muteKey, String(next));
+      window.dispatchEvent(new CustomEvent('little-arcade-mute', { detail: next }));
       return next;
     });
   }, [unlock]);
@@ -80,5 +81,14 @@ export function useCandyAudio() {
   const resetCloudTick = useCallback(() => { cloudTickPitch.current = 0; }, []);
 
   useEffect(() => () => { void context.current?.close(); context.current = null; }, []);
+  useEffect(() => {
+    const onMute = (event: Event) => {
+      const next = (event as CustomEvent<boolean>).detail;
+      if (typeof next !== 'boolean') return;
+      mutedRef.current = next; setMuted(next); localStorage.setItem(muteKey, String(next));
+    };
+    window.addEventListener('little-arcade-mute', onMute);
+    return () => window.removeEventListener('little-arcade-mute', onMute);
+  }, []);
   return { muted, toggleMute, unlock, play, resetCloudTick };
 }

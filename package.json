@@ -7,7 +7,7 @@
     "shared"
   ],
   "scripts": {
-    "dev": "npm run build -w shared && concurrently -k -n server,client -c magenta,cyan \"npm run dev -w server\" \"npm run dev -w client\"",
+    "dev": "npm run build -w shared && concurrently -k -n shared,server,client -c yellow,magenta,cyan \"npm run dev -w shared\" \"npm run dev -w server\" \"npm run dev -w client\"",
     "build": "npm run build -w shared && npm run build -w server && npm run build -w client && node scripts/prepare-vercel-output.mjs",
     "start": "npm run start -w server"
   },

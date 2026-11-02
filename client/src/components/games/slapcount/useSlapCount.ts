@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { SlapView, ClientToServerEvents, ServerToClientEvents } from '@arcade/shared';
+import type { SlapCard, SlapView, ClientToServerEvents, ServerToClientEvents } from '@arcade/shared';
 import type { Socket } from 'socket.io-client';
 
 type SlapSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
-type LaidEvent = { cardId: number; card: { value: number; suit: 'heart'|'star'|'moon'|'drop' }; count: number | null; serverTime: number };
+type LaidEvent = { cardId: number; card: SlapCard; count: number | null; serverTime: number };
 type ResolveEvent = { cardId: number; result: 'pile'|'wrong'; winner?: string; loser?: string; penalty?: number };
 
 export function useSlapCount(game: SlapView, self: string, socket: SlapSocket) {
@@ -59,7 +59,7 @@ export function useSlapCount(game: SlapView, self: string, socket: SlapSocket) {
   const slap = useCallback(() => {
     if (game.phase !== 'playing' || game.paused || !game.pileSize || !game.currentCardId) return;
     socket.emit('slap:slap', { cardId: game.currentCardId });
-  }, [game.currentCardId, game.decisionPending, game.matchWindowOpen, game.paused, game.phase, game.pileSize, socket]);
+  }, [game.currentCardId, game.decisionPending, game.slapPossible, game.paused, game.phase, game.pileSize, socket]);
   const locked = (game.slapLockouts[self] ?? 0) > clock;
   return { rttMs, clock, lay, slap, locked, laidEvent, resolvedEvent };
 }

@@ -7,7 +7,7 @@ import { Server } from 'socket.io';
 import type { ClientToServerEvents, ServerToClientEvents } from '@arcade/shared';
 import type { CloudMove } from '@arcade/shared';
 import type { SlapMove } from '@arcade/shared';
-import { backToLobby, cloudMove, cupsGuess, cupsHint, cupsLock, cupsReact, disconnect, enterRoom, lobbyView, makeGuess, nextCloudRound, nextHangman, nextSlapRound, playerFor, poisonForcedLoss, poisonLock, poisonPick, poisonReact, poisonTap, poisonTimeout, nextPoisonRound, reaction, roomForSocket, setHangman, slapCompleteResolve, slapMove, slapResolveWindow, slapStartPlaying, startGame, markSlapCardVisible } from './rooms.js';
+import { backToLobby, cloudMove, cupsGuess, cupsHint, cupsLock, cupsReact, disconnect, enterRoom, lobbyView, makeGuess, nextCloudRound, nextHangman, nextSlapRound, playerFor, poisonForcedLoss, poisonLock, poisonPick, poisonReact, poisonTap, poisonTimeout, nextPoisonRound, reaction, roomForSocket, setHangman, slapCompleteResolve, slapMove, slapResolveWindow, slapStartPlaying, startGame, markSlapCardVisible, updatePlayerDoodle } from './rooms.js';
 import { checkForcedLoss, legalTiles } from './games/poison.js';
 import { clearLockout, completeSwap, pauseTimers, resumeTimers, timeoutCall, timeoutHunt, type CloudGame } from './games/cloud.js';
 import { completeResolve, pauseTimers as pauseSlapTimers, recordRtt, resumeTimers as resumeSlapTimers, type SlapCountGame } from './games/slapcount.js';
@@ -188,14 +188,23 @@ function handleSlap(room: NonNullable<ReturnType<typeof roomForSocket>>, player:
 }
 
 io.on('connection', socket => {
-  socket.on('enter', async ({ name: rawName, passcode, token }) => {
+  socket.on('doodle:select', ({ doodleId }) => {
+    const room = roomForSocket(socket.id);
+    const player = room && playerFor(room, socket.id);
+    if (!room || !player || !updatePlayerDoodle(room, player.id, doodleId)) {
+      socket.emit('actionError', 'Choose a doodle from the gallery.');
+      return;
+    }
+    publish(room);
+  });
+  socket.on('enter', async ({ name: rawName, passcode, token, timezone, doodleId, shareSky }) => {
     const name = rawName.trim().slice(0, 24);
     if (!name || !passcode.trim() || !/^[a-f0-9-]{20,80}$/i.test(token)) {
       socket.emit('joinError', 'Add your name and shared passcode to come in.');
       return;
     }
     const cleanPasscode = passcode.trim();
-    const result = enterRoom(cleanPasscode, name, token, socket.id);
+    const result = enterRoom(cleanPasscode, name, token, socket.id, { timezone, doodleId, shareSky });
     if (result.error || !result.room) {
       socket.emit('joinError', result.error ?? 'Could not enter the room.');
       return;
@@ -256,6 +265,11 @@ io.on('connection', socket => {
   socket.on('poisonReact', ({ emoji }) => action((r, p) => poisonReact(r, p, emoji)));
   socket.on('poisonNextRound', () => action((r, p) => nextPoisonRound(r, p)));
   socket.on('cloud:callNumber', payload => cloudAction({ type: 'cloud:callNumber', ...payload }));
+  socket.on('cloud:requestState', () => {
+    const room = roomForSocket(socket.id);
+    const player = room && playerFor(room, socket.id);
+    if (room && player && room.game && 'cloudGame' in room.game) socket.emit('roomState', lobbyView(room, player.id));
+  });
   socket.on('cloud:tick', (payload, ack) => cloudAction({ type: 'cloud:tick', ...payload }, ack));
   socket.on('cloud:findNumber', payload => cloudAction({ type: 'cloud:findNumber', ...payload }));
   socket.on('cloud:react', payload => cloudAction({ type: 'cloud:react', ...payload }));

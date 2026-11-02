@@ -1,0 +1,4 @@
+.game-screen-recovery{position:fixed;inset:0;z-index:30;display:grid;place-items:center;padding:24px;background:#1f1b2e;color:#f6efe8;text-align:center}
+.game-screen-recovery>div{width:min(100%,440px);padding:32px;border:1px solid #bfa9e844;border-radius:22px;background:#2b2640;box-shadow:0 20px 55px #100d1b77}
+.game-screen-recovery h2{margin:8px 0;font:600 28px var(--display)}.game-screen-recovery p{margin:0 0 22px;color:#b9adbf;font-size:14px}
+.cloud-field-reconnecting{position:absolute;inset:0;z-index:4;display:grid;place-items:center;color:#d8c9e7;font-size:12px;letter-spacing:.04em;background:#211d31aa;pointer-events:none}

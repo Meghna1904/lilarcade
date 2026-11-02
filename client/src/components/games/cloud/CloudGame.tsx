@@ -9,13 +9,16 @@ import { CloudField } from './CloudField';
 import { cloudLines } from './cloudConfig';
 import { StatusBar } from './StatusBar';
 import { useCloudGame } from './useCloudGame';
-import { ReactionBar } from '../../reactions/ReactionBar';
+import { DoodleResultPair } from '../../../doodles/DoodleResultPair';
+import { playerDoodleId } from '../../../doodles/playerDoodle';
+import { GameDoodle } from '../../../doodles/GameDoodle';
 
 type CloudSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 type Props = { game: CloudView; self: string; players: RoomView['players']; socket: CloudSocket };
 
-export function CloudGame({ game, self, players, socket }: Props) {
+export function CloudGame({ game, self, players, socket, connected }: Props & { connected: boolean }) {
   const [clock, setClock] = useState(Date.now());
+  const [helpOpen, setHelpOpen] = useState(false);
   const { muted, toggleMute, unlock, play, resetCloudTick } = useCandyAudio();
   const { tick, optimisticTicks } = useCloudGame(game, socket);
   const priorPhase = useRef(game.phase);
@@ -23,28 +26,33 @@ export function CloudGame({ game, self, players, socket }: Props) {
   const priorHunt = useRef(game.huntId);
   const caller = game.roles.caller === self;
   const hunter = game.roles.hunter === self;
+  const ended = game.phase === 'roundOver' || game.phase === 'matchOver';
   const callerMarking = game.phase === 'hunting' && caller;
   const playerAId = players[0]?.id ?? game.roles.caller;
   const playerBId = players[1]?.id ?? game.roles.hunter;
-  const isEnded = game.phase === 'roundOver' || game.phase === 'matchOver';
-  const displayName = useCallback((id: string) => players.find(player => player.id === id)?.name ?? 'Your person', [players]);
-  const target = game.targetNumber;
-  const timerDeadline = game.phase === 'calling' ? game.callDeadline : game.huntDeadline;
-  const seconds = Math.max(0, Math.ceil(((timerDeadline ?? 0) - clock) / 1000));
+  const playerAName = players.find(player => player.id === playerAId)?.name ?? 'Caller';
+  const playerBName = players.find(player => player.id === playerBId)?.name ?? 'Hunter';
+  const myProgress = game.tickCounts[self] ?? 0;
+  const tickCounts = { ...game.tickCounts };
+  if (caller && optimisticTicks) tickCounts[self] = Math.min(game.settings.targetBoxes, myProgress + optimisticTicks);
+  const deadline = game.phase === 'calling' ? game.callDeadline : game.huntDeadline;
+  const seconds = Math.max(0, Math.ceil(((deadline ?? 0) - clock) / 1000));
   const timerSeconds = game.paused ? Math.ceil((game.remainingMs ?? 0) / 1000) : seconds;
   const lockedOut = hunter && (game.lockoutUntil ?? 0) > clock;
-  const playerAName = displayName(playerAId);
-  const playerBName = displayName(playerBId);
-  const winnerName = game.matchWinner ? displayName(game.matchWinner) : game.roundWinner ? displayName(game.roundWinner) : '';
-  const iWon = game.matchWinner === self || game.roundWinner === self;
-  const tickCounts = { ...game.tickCounts };
-  if (caller && optimisticTicks) tickCounts[self] = Math.min(game.settings.targetBoxes, (tickCounts[self] ?? 0) + optimisticTicks);
+  const lockoutProgress = lockedOut && game.lockoutUntil ? Math.max(0, Math.min(1, (game.lockoutUntil - clock) / 1000)) : 0;
+  const winnerId = game.matchWinner ?? game.roundWinner;
+  const winnerName = players.find(player => player.id === winnerId)?.name ?? 'Your person';
+  const iWon = winnerId === self;
+  let status = '';
+  if (game.phase === 'calling') status = caller ? 'Call a number' : `${playerAId === game.roles.caller ? playerAName : playerBName} is picking a number…`;
+  else if (game.phase === 'hunting') status = hunter ? 'Find it!' : `${game.roles.hunter === playerAId ? playerAName : playerBName} is hunting`;
+  else if (game.phase === 'swapping') status = game.swapReason === 'caught' ? 'Found it!' : 'Time is up!';
+  else status = game.phase === 'matchOver' ? 'Race complete!' : 'Round complete!';
 
   useEffect(() => {
     const timer = window.setInterval(() => setClock(Date.now()), 100);
     return () => window.clearInterval(timer);
   }, []);
-
   useEffect(() => {
     const previous = priorPhase.current;
     if (previous === 'calling' && game.phase === 'hunting') play('cloudCall');
@@ -52,85 +60,92 @@ export function CloudGame({ game, self, players, socket }: Props) {
       if (game.swapReason === 'caught') play('cloudFound');
       play('cloudSwap');
     }
-    if (previous !== 'roundOver' && previous !== 'matchOver' && isEnded) play(game.matchWinner === self || game.roundWinner === self ? 'win' : 'lose');
+    if (previous !== 'roundOver' && previous !== 'matchOver' && ended) play(game.matchWinner === self || game.roundWinner === self ? 'win' : 'lose');
     priorPhase.current = game.phase;
-  }, [game.phase, game.swapReason, game.matchWinner, isEnded, self, play]);
-
+  }, [game.phase, game.swapReason, game.matchWinner, ended, self, play]);
   useEffect(() => {
     if (priorWrong.current !== game.wrongTapId && hunter) play('cloudWrong');
     priorWrong.current = game.wrongTapId;
   }, [game.wrongTapId, hunter, play]);
-
   useEffect(() => {
     if (priorHunt.current !== game.huntId || game.phase !== 'hunting' || !caller || game.paused) resetCloudTick();
     priorHunt.current = game.huntId;
   }, [caller, game.huntId, game.paused, game.phase, resetCloudTick]);
+  useEffect(() => {
+    if (!helpOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') setHelpOpen(false); };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [helpOpen]);
 
   const onNumber = (n: number) => {
-    if (game.paused || isEnded || lockedOut) return;
+    if (game.paused || ended || lockedOut) return;
     unlock();
     if (game.phase === 'calling' && caller) socket.emit('cloud:callNumber', { n, huntId: game.huntId });
     else if (game.phase === 'hunting' && hunter) socket.emit('cloud:findNumber', { n, huntId: game.huntId });
   };
+  const requestCloudState = useCallback(() => {
+    if (socket.connected) socket.emit('cloud:requestState');
+  }, [socket]);
   const onTick = () => {
     if (!caller || game.phase !== 'hunting' || game.paused || tickCounts[self] >= game.settings.targetBoxes) return;
-    unlock();
-    play('cloudTick');
-    tick();
+    unlock(); play('cloudTick'); tick();
   };
-
-  let status = '';
-  if (game.phase === 'calling') status = caller ? 'Call a number' : `${displayName(game.roles.caller)} is choosing…`;
-  else if (game.phase === 'hunting') status = hunter ? `FIND ${target ?? '…'}` : `${displayName(game.roles.hunter)} is hunting ${target ?? ''}!`;
-  else if (game.phase === 'swapping') status = game.swapReason === 'caught' ? 'Found it!' : 'Time!';
-  else status = game.phase === 'matchOver' ? 'Race complete!' : 'Round complete!';
-
-  if (isEnded) return <section className="game-layout cloud-game-layout">
-    <div className="game-main"><div className="game-title-row"><button className="back-link" onClick={() => socket.emit('cloud:backToLobby')}>← Lobby</button><div className="eyebrow">CLOUD RACE · ROUND {game.round}</div><span className="round-chip">{game.format === 'quick' ? 'QUICK MATCH' : `${game.matchScore[playerAId] ?? 0} – ${game.matchScore[playerBId] ?? 0}`}</span></div>
-      <div className="panel cloud-panel"><div className="cloud-result">
-        {game.matchWinner === self && <div className="cloud-confetti" aria-hidden="true">{Array.from({ length: 22 }, (_, index) => <i key={index} style={{ '--i': index } as CSSProperties} />)}</div>}
-        <div className="cloud-result-spark">{game.matchWinner === self ? '✦' : '☁'}</div><span className="eyebrow">{game.phase === 'matchOver' ? 'MATCH OVER' : 'ROUND OVER'}</span>
-        <h2>{game.phase === 'matchOver' ? iWon ? 'You won the race!' : `${winnerName} won the match!` : iWon ? 'You won this round!' : `${winnerName} won this round!`}</h2>
-        <p>Final ticks: {playerAName} <b>{game.tickCounts[playerAId] ?? 0}</b> · {playerBName} <b>{game.tickCounts[playerBId] ?? 0}</b></p>
-        <div className="cloud-result-scores"><BoxGrid name={playerAName} count={game.tickCounts[playerAId] ?? 0} target={game.settings.targetBoxes} self={playerAId === self} compact /><BoxGrid name={playerBName} count={game.tickCounts[playerBId] ?? 0} target={game.settings.targetBoxes} self={playerBId === self} compact /></div>
-        <div className="result-actions"><button className="button primary" onClick={() => socket.emit('cloud:nextRound')}>{game.phase === 'matchOver' ? 'Rematch' : 'Next round'} <span>→</span></button><button className="button text-button" onClick={() => socket.emit('cloud:backToLobby')}>Back to lobby</button></div>
-      </div></div>
-    </div>
-    <aside className="game-side"><div className="panel cloud-score-panel"><div className="eyebrow">THIS MATCH</div><h3>Scoreboard</h3><div className="mini-score-row"><span>{playerAName}</span><b>{game.matchScore[playerAId] ?? 0}</b></div><div className="mini-score-row"><span>{playerBName}</span><b>{game.matchScore[playerBId] ?? 0}</b></div></div></aside>
-  </section>;
-
+  const back = () => {
+    if (game.phase === 'hunting' && !window.confirm('Leave the hunt and return to the lobby?')) return;
+    socket.emit('cloud:backToLobby');
+  };
   const mode = game.phase === 'calling' && caller ? 'call' : game.phase === 'hunting' && hunter ? 'find' : 'idle';
-  const highlighted = game.phase === 'hunting' && caller ? target : undefined;
-  const found = game.phase === 'swapping' ? target : undefined;
-  const speech = game.phase === 'calling' ? (caller ? cloudLines.caller[(game.huntId - 1) % cloudLines.caller.length] : cloudLines.hunter[(game.huntId - 1) % cloudLines.hunter.length]) : game.phase === 'hunting' ? (hunter ? cloudLines.hunting[(game.huntId - 1) % cloudLines.hunting.length] : cloudLines.hunting[(game.huntId + 1) % cloudLines.hunting.length]) : game.swapReason === 'caught' ? cloudLines.found[(game.huntId - 1) % cloudLines.found.length] : cloudLines.timeout[(game.huntId - 1) % cloudLines.timeout.length];
+  const highlighted = game.phase === 'hunting' && caller ? game.targetNumber : undefined;
+  const found = game.phase === 'swapping' ? game.targetNumber : undefined;
+  const speech = game.phase === 'calling' ? (caller ? cloudLines.caller[(game.huntId - 1) % cloudLines.caller.length] : cloudLines.hunter[(game.huntId - 1) % cloudLines.hunter.length]) : game.phase === 'hunting' ? cloudLines.hunting[(game.huntId - 1) % cloudLines.hunting.length] : game.swapReason === 'caught' ? cloudLines.found[(game.huntId - 1) % cloudLines.found.length] : cloudLines.timeout[(game.huntId - 1) % cloudLines.timeout.length];
 
-  return <section className={`game-layout cloud-game-layout ${callerMarking ? 'cloud-marking-only' : ''}`}>
-    <div className="game-main">
-      <div className="game-title-row"><button className="back-link" onClick={() => socket.emit('cloud:backToLobby')}>← Lobby</button><div className="eyebrow">CLOUD RACE · ROUND {game.round}</div><span className="round-chip">{game.format === 'quick' ? 'QUICK MATCH' : `${game.matchScore[playerAId] ?? 0} – ${game.matchScore[playerBId] ?? 0}`}</span></div>
-      <div className="panel cloud-panel">
-        {callerMarking ? <div className="cloud-marking-stage">
-          <div className="cloud-marking-heading"><div><span>YOUR GRID</span><b>{game.paused ? 'Paused while your person reconnects' : `Check boxes while ${displayName(game.roles.hunter)} hunts for ${target}`}</b></div><div className="cloud-timer" style={{ '--cloud-timer-progress': Math.max(0, timerSeconds / game.settings.huntTimeoutSeconds) } as CSSProperties} aria-label={`${timerSeconds} seconds remaining`}><b>{timerSeconds}</b><small>sec</small></div></div>
-          <div className="cloud-marking-grid"><BoxGrid name="YOUR PROGRESS" count={tickCounts[self] ?? 0} target={game.settings.targetBoxes} self canTick={!game.paused && tickCounts[self] < game.settings.targetBoxes} onTick={onTick} /></div>
+  return <section className="cloud-screen">
+    <header className="cloud-topbar">
+      <button className="cloud-back" onClick={back} aria-label="Back to lobby">← <span>Lobby</span></button>
+      <div className="cloud-title"><svg viewBox="0 0 40 32" aria-hidden="true"><path d="M9 26H30a8 8 0 0 0 .5-16 11 11 0 0 0-20-1 8.5 8.5 0 0 0-1.5 17Z"/><path d="M15 13h.1m5-.4h.1m5 .3h.1M16 18q4 4 8 0"/><path d="M19 20v5m-2 0h4"/></svg><b>Cloud Race</b></div>
+      <div className="cloud-topbar-actions">{game.format === 'bestOf3' && <div className="cloud-round-pips" aria-label={`${game.matchScore[playerAId] ?? 0} to ${game.matchScore[playerBId] ?? 0}`}><i className={(game.matchScore[playerAId] ?? 0) > 0 ? 'filled' : ''}/><i className={(game.matchScore[playerBId] ?? 0) > 0 ? 'filled' : ''}/><i className={game.round >= 3 ? 'filled' : ''}/></div>}<span className={`cloud-connection${connected ? ' online' : ''}`} aria-label={connected ? 'Connected' : 'Reconnecting'}/><button className="cloud-icon-button" onClick={toggleMute} aria-label={muted ? 'Turn sound on' : 'Mute sound'}>{muted ? '♪̸' : '♫'}</button><button className="cloud-icon-button" onClick={() => setHelpOpen(true)} aria-label="How to play">?</button></div>
+    </header>
+    <div className="cloud-zones">
+      <CloudPlayerRail player={players.find(player => player.id === self)} players={players} game={game} role={caller ? 'CALLER' : 'HUNTER'} count={tickCounts[self] ?? 0} target={game.settings.targetBoxes} wins={game.matchScore[self] ?? 0} side="left" line={speech} winnerId={ended ? winnerId : undefined}/>
+      <main className="cloud-board">
+        {game.paused && <div className="cloud-paused-overlay" role="status">Your person lost connection. Waiting for them to come back…</div>}
+        <StatusBar game={game} self={self} players={players} seconds={timerSeconds} status={status} lockoutProgress={lockoutProgress}/>
+        {ended ? <div className="cloud-result">
+          {iWon && <div className="cloud-confetti" aria-hidden="true">{Array.from({length:22},(_,i)=><i key={i} style={{'--i':i} as CSSProperties}/>)}</div>}
+          <div className="cloud-result-spark">{iWon ? '✦' : '☁'}</div><DoodleResultPair players={players} winnerId={winnerId}/><span className="eyebrow">{game.phase === 'matchOver' ? 'MATCH OVER' : 'ROUND OVER'}</span>
+          <h2>{iWon ? 'You won the race!' : `${winnerName} won the race!`}</h2>
+          <p>Final progress: {playerAName} <b>{game.tickCounts[playerAId] ?? 0} / {game.settings.targetBoxes}</b> · {playerBName} <b>{game.tickCounts[playerBId] ?? 0} / {game.settings.targetBoxes}</b></p>
+          <div className="cloud-result-scores"><BoxGrid name={playerAName} count={game.tickCounts[playerAId] ?? 0} target={game.settings.targetBoxes} self={playerAId === self} compact/><BoxGrid name={playerBName} count={game.tickCounts[playerBId] ?? 0} target={game.settings.targetBoxes} self={playerBId === self} compact/></div>
+          <div className="result-actions"><button className="button primary" onClick={() => socket.emit('cloud:nextRound')}>{game.phase === 'matchOver' ? 'Rematch' : 'Next round'} <span>→</span></button><button className="button text-button" onClick={() => socket.emit('cloud:backToLobby')}>Back to lobby</button></div>
         </div> : <>
-        <div className="cloud-role-row"><div><span className="role-pill">CALLER · {displayName(game.roles.caller)}</span><span className="role-pill hunter-pill">HUNTER · {displayName(game.roles.hunter)}</span></div><button className="candy-mute" type="button" aria-pressed={muted} onClick={toggleMute}>{muted ? '♪̸ Sound off' : '♪ Sound on'}</button></div>
-        {game.paused && <div className="paused-label cloud-paused">Paused while your person reconnects</div>}
-        <StatusBar game={game} self={self} players={players} seconds={game.paused ? Math.ceil((game.remainingMs ?? 0) / 1000) : seconds} status={status} />
-        {game.phase === 'hunting' && hunter && <div className="cloud-find-label">FIND <b>{target}</b></div>}
-        <CloudField layout={game.layout} mode={mode} highlightNumber={highlighted} foundNumber={found} lockedOut={lockedOut} onNumber={onNumber} />
-        <div className="cloud-boxes"><BoxGrid name={playerAName} count={tickCounts[playerAId] ?? 0} target={game.settings.targetBoxes} self={playerAId === self} canTick={caller && playerAId === self && game.phase === 'hunting' && !game.paused} onTick={onTick} /><BoxGrid name={playerBName} count={tickCounts[playerBId] ?? 0} target={game.settings.targetBoxes} self={playerBId === self} canTick={caller && playerBId === self && game.phase === 'hunting' && !game.paused} onTick={onTick} /></div>
-        <div className="cloud-character-row"><CloudCharacter name={playerAName} side="left" line={speech} active={game.roles.caller === playerAId ? caller : hunter} /><CloudCharacter name={playerBName} side="right" line={speech} active={game.roles.caller === playerBId ? caller : hunter} /></div>
-        <ReactionBar onReact={id => socket.emit('cloud:react', { emoji: id })} />
+          {callerMarking ? <div className="cloud-marking-panel" role="group" aria-label="Mark your progress">
+            <p>Click each box as you tick while your person hunts.</p>
+            <BoxGrid name={playerAName} count={tickCounts[self] ?? 0} target={game.settings.targetBoxes} self canTick={!game.paused && (tickCounts[self] ?? 0) < game.settings.targetBoxes} onTick={onTick}/>
+          </div> : <CloudField seed={(game as unknown as { layoutSeed?: unknown }).layoutSeed} mode={mode} highlightNumber={highlighted} foundNumber={found} lockedOut={lockedOut} onNumber={onNumber} connected={connected} onRequestState={requestCloudState}/>}
+          <div className="cloud-action-bar">
+            {callerMarking ? <p>Click the next box to mark it</p>
+              : hunter && game.phase === 'hunting' ? <p>{game.huntId <= 1 ? 'Find the called number in the cloud' : 'You know the number hunt now — go!'}</p>
+              : caller && game.phase === 'calling' ? <p>Tap any number in the cloud to call it</p>
+              : game.phase === 'calling' ? <p>{status}</p> : game.phase === 'swapping' ? <p>Switching roles…</p> : <p>{status}</p>}
+          </div>
         </>}
-      </div>
+      </main>
+      <CloudPlayerRail player={players.find(player => player.id !== self)} players={players} game={game} role={caller ? 'HUNTER' : 'CALLER'} count={tickCounts[self === playerAId ? playerBId : playerAId] ?? 0} target={game.settings.targetBoxes} wins={game.matchScore[self === playerAId ? playerBId : playerAId] ?? 0} side="right" line={speech} winnerId={ended ? winnerId : undefined}/>
     </div>
-    <aside className="game-side"><div className="panel cloud-score-panel"><div className="eyebrow">THIS MATCH</div><h3>Little score</h3><div className="mini-score-row"><span>{playerAName}</span><b>{game.matchScore[playerAId] ?? 0}</b></div><div className="mini-score-row"><span>{playerBName}</span><b>{game.matchScore[playerBId] ?? 0}</b></div></div><div className="panel pep-talk"><span>☁</span><p>{speech}</p></div></aside>
+    {helpOpen && <div className="cloud-modal-backdrop" onMouseDown={event => {if (event.target === event.currentTarget) setHelpOpen(false)}}><section className="cloud-help-modal" role="dialog" aria-modal="true" aria-labelledby="cloud-help-title"><button onClick={() => setHelpOpen(false)} aria-label="Close">×</button><span className="eyebrow">A TINY RACE</span><h2 id="cloud-help-title">How to play</h2><p>Take turns calling a number and finding it in the cloud. The caller ticks boxes while the hunter searches. First to fill the progress boxes wins.</p><button className="button primary" onClick={() => setHelpOpen(false)}>Got it</button></section></div>}
   </section>;
 }
 
-function CloudCharacter({ name, side, line, active }: { name: string; side: 'left' | 'right'; line: string; active: boolean }) {
-  return <div className={`cloud-character ${side} ${active ? 'active' : ''}`}><svg viewBox="0 0 90 70" aria-hidden="true"><path d="M20 48c-10 0-15-7-15-16s7-16 16-16c4-10 14-14 23-10 9-8 24-5 28 7 11 1 17 9 16 19-1 9-8 15-18 15z" fill="#f5dfba" stroke="#6d5b7b" strokeWidth="3"/><circle cx="34" cy="32" r="2.5" fill="#40324e"/><circle cx="55" cy="32" r="2.5" fill="#40324e"/><path d="M38 39q7 7 14 0" fill="none" stroke="#9c5d6d" strokeWidth="2.5" strokeLinecap="round"/><ellipse cx="27" cy="38" rx="4" ry="2.4" fill="#ff9aa4"/><ellipse cx="62" cy="38" rx="4" ry="2.4" fill="#ff9aa4"/><path d="M30 12q9-8 17-2" stroke="#fff" strokeWidth="3" strokeLinecap="round" fill="none"/></svg><div className="cloud-speech"><b>{name}</b><span>{line}</span></div></div>;
+function CloudPlayerRail({ player, players, game, role, count, target, wins, side, line, winnerId }: { player?: RoomView['players'][number]; players: RoomView['players']; game: CloudView; role: 'CALLER' | 'HUNTER'; count: number; target: number; wins: number; side: 'left' | 'right'; line: string; winnerId?: string }) {
+  const expression = winnerId ? player?.id === winnerId ? 'celebrating' : 'sad' : role === 'HUNTER' && game.wrongTapId > 0 ? 'shocked' : role === 'HUNTER' && count === 0 && game.phase === 'hunting' ? 'worried' : 'idle';
+  return <aside className={`cloud-player-rail cloud-player-rail-${side}`} data-reaction-player={player?.id}>
+    <GameDoodle id={playerDoodleId(players, player)} expression={expression} playing={!['roundOver', 'matchOver'].includes(game.phase)} seed={`${player?.id}:${game.huntId}:${game.wrongTapId}`} size="clamp(150px,17vh,240px)" flip={side === 'right'} name={player?.name}/>
+    <div className="cloud-rail-ledge"/><strong>{player?.name ?? (side === 'left' ? 'You' : 'Your person')}</strong><span className={`cloud-role-badge ${role === 'HUNTER' ? 'hunter' : ''}`}>{role}</span>
+    <div className="cloud-rail-progress"><BoxGrid name="Progress" count={count} target={target} self={side === 'left'} compact/><span>{count} / {target}</span></div>
+    <div className="cloud-rail-wins" aria-label={`${wins} round wins`}>{Array.from({length:wins},(_,i)=><i key={i}>│</i>)}<small>{wins} wins</small></div><p className="cloud-rail-line">{line}</p>
+  </aside>;
 }
-
 export function CloudLobbyCard({ onStart }: { onStart: (format: 'quick' | 'bestOf3', settings: CloudSettings) => void }) {
   const [targetBoxes, setTargetBoxes] = useState<30 | 50 | 100>(100);
   const [catchBonus, setCatchBonus] = useState<0 | 1 | 2 | 3>(1);

@@ -13,7 +13,7 @@ test('builds a shuffled 40-card deck and views reveal only counts and played pil
   const g = createGame('a','b','a','quick',{ ...settings, startingCards:20 },1,{},0);
   assert.equal(g.decks.a.length, 20); assert.equal(g.decks.b.length, 20);
   assert.equal(new Set([...g.decks.a, ...g.decks.b].map(card => card.uid)).size, 40);
-  assert.equal([...g.decks.a, ...g.decks.b].every(card => card.value >= 1 && card.value <= 10), true);
+  assert.equal([...g.decks.a, ...g.decks.b].every(card => card.value === 'W' || (card.value >= 1 && card.value <= 9)), true);
   const view = getViewFor(g, 'a', 0) as any;
   assert.equal(view.myDeckSize, 20); assert.equal(view.opponentDeckSize, 20);
   assert.equal('decks' in view, false); assert.equal('uid' in view, false);

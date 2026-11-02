@@ -41,7 +41,10 @@ function shuffle<T>(items: T[]): T[] {
 function other(g: SlapCountGame, player: string) { return player === g.playerA ? g.playerB : g.playerA; }
 function buildDeck(): InternalCard[] {
   const suits: SlapCard['suit'][] = ['heart','star','moon','drop'];
-  return suits.flatMap(suit => Array.from({ length: 10 }, (_, index) => ({ uid: suits.indexOf(suit) * 10 + index + 1, value: index + 1, suit })));
+  return suits.flatMap((suit, suitIndex) => [
+    ...Array.from({ length: 9 }, (_, index) => ({ uid: suitIndex * 10 + index + 1, value: index + 1, suit })),
+    { uid: suitIndex * 10 + 10, value: 'W' as const, suit },
+  ]);
 }
 function makeRound(g: SlapCountGame, starter: string, round: number, score: Record<string, number>, now: number, cardIdBase: number) {
   const cards = shuffle(buildDeck());
@@ -108,7 +111,10 @@ export function layCard(g: SlapCountGame, player: string, now = Date.now()): Sla
   const usedCount = g.count;
   const card = deck.shift()!;
   g.pile.push(card); g.laidCards++; g.currentCardId++; g.currentCard = card; g.currentCardCount = usedCount;
-  g.currentCardSentAt = now; g.currentCardMatched = card.value === usedCount; g.lastLayAt = now;
+  const previousCard = g.pile.at(-2);
+  g.currentCardSentAt = now;
+  g.currentCardMatched = card.value === 'W' || card.value === usedCount || (!!previousCard && previousCard.value === card.value);
+  g.lastLayAt = now;
   g.count = usedCount === 10 ? 1 : usedCount + 1;
   g.turn = other(g, player);
   g.autoLayDeadline = g.settings.pace === 'manual' ? 0 : now + g.settings.pace;
@@ -226,6 +232,7 @@ export function getViewFor(g: SlapCountGame, player: string, now = Date.now()): 
     currentCardId: g.currentCardId, currentCardSentAt: g.currentCardSentAt,
     currentCardCount: g.settings.callMode ? null : g.currentCardCount,
     matchWindowOpen: g.matchWindowOpen && !g.decisionPending, decisionPending: g.decisionPending,
+    slapPossible: g.currentCardMatched && g.matchWindowOpen && !g.decisionPending,
     slapLockouts: Object.fromEntries(Object.entries(g.slapLockouts).filter(([, deadline]) => deadline > now)),
     matchScore: { ...g.matchScore }, laidCards: g.laidCards,
     ...(g.readyDeadline ? { readyDeadline: g.readyDeadline } : {}), ...(g.resolveDeadline ? { resolveDeadline: g.resolveDeadline } : {}),

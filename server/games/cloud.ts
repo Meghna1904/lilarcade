@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
-import type { CloudMove, CloudPhase, CloudPosition, CloudSettings, CloudView } from '@arcade/shared';
-import { isReactionId, layoutCloud } from '@arcade/shared';
+import type { CloudMove, CloudPhase, CloudSettings, CloudView } from '@arcade/shared';
+import { isReactionId } from '@arcade/shared';
 
 export type CloudGame = {
   cloudGame: true;
@@ -11,8 +11,7 @@ export type CloudGame = {
   hunter: string;
   starterCaller: string;
   matchStarterCaller: string;
-  layout: CloudPosition[];
-  layoutSeed: string;
+  layoutSeed: number;
   huntId: number;
   targetNumber: number | undefined;
   callDeadline: number;
@@ -52,11 +51,7 @@ function randomInt(max: number): number {
   return value % max;
 }
 
-function newLayoutSeed(): string { return randomBytes(8).toString('hex'); }
-function newLayout(): { seed: string; layout: CloudPosition[] } {
-  const seed = newLayoutSeed();
-  return { seed, layout: layoutCloud(seed) };
-}
+function newLayoutSeed(): number { return randomBytes(4).readUInt32BE(0); }
 function other(g: CloudGame, player: string): string { return player === g.playerA ? g.playerB : g.playerA; }
 
 function finishRound(g: CloudGame, winner: string): void {
@@ -81,7 +76,6 @@ export function createCloudGame(
   now = Date.now(),
   matchStarterCaller = starterCaller,
 ): CloudGame {
-  const seed = newLayoutSeed();
   return {
     cloudGame: true,
     phase: 'calling',
@@ -91,8 +85,7 @@ export function createCloudGame(
     hunter: starterCaller === playerA ? playerB : playerA,
     starterCaller,
     matchStarterCaller,
-    layoutSeed: seed,
-    layout: layoutCloud(seed),
+    layoutSeed: newLayoutSeed(),
     huntId,
     targetNumber: undefined,
     callDeadline: now + CALL_WINDOW_MS,
@@ -171,9 +164,7 @@ export function completeSwap(g: CloudGame, now = Date.now()): boolean {
   g.swapReason = undefined;
   g.huntId++;
   if (g.settings.layoutMode === 'hunt') {
-    const next = newLayout();
-    g.layoutSeed = next.seed;
-    g.layout = next.layout;
+    g.layoutSeed = newLayoutSeed();
   }
   g.targetNumber = undefined;
   g.phase = 'calling';
@@ -255,7 +246,7 @@ export function getViewFor(g: CloudGame, player: string): CloudView {
   return {
     game: 'cloud',
     phase: g.phase,
-    layout: g.layout.map(item => ({ ...item })),
+    layoutSeed: g.layoutSeed,
     roles: { caller: g.caller, hunter: g.hunter },
     round: g.round,
     format: g.format,

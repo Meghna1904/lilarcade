@@ -1,14 +1,32 @@
 import { createHash, createHmac } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { isReactionId, type CloudMove, type CloudSettings, type CupId, type GameId, type MatchFormat, type RoomView, type Scoreboard, type CupsSettings, type PoisonSettings, type SlapMove, type SlapSettings } from '@arcade/shared';
 import { createHangman, guess, setWord, viewFor, type HangmanGame } from './games/hangman.js';
 import { createCups, getViewFor as cupsViewFor, lockSecret, reaction as cupsReaction, submitGuess, useHint, validSettings, type CupsGame } from './games/cups.js';
 import { checkForcedLoss, createPoison, getViewFor as poisonViewFor, lockPick, pickTile, react as poisonReaction, resolveForcedLoss, tapTile, timeoutTurn, validPoisonSettings, type PoisonGame } from './games/poison.js';
 import { createCloudGame, getViewFor as cloudViewFor, handleMove as handleCloudMove, type CloudGame } from './games/cloud.js';
 import { completeResolve, createGame as createSlapCount, getViewFor as slapViewFor, handleMove as handleSlapMove, markCardVisible, resolveWindow, startPlaying, type SlapCountGame } from './games/slapcount.js';
-type Player = { id: string; name: string; online: boolean; socketId: string };
+type Player = { id: string; name: string; online: boolean; socketId: string; timezone?: string; doodleId?: string };
 type Game = HangmanGame | CupsGame | PoisonGame | CloudGame | SlapCountGame;
 type Room = { key: string; players: Player[]; game: Game | null; scoreboard: Scoreboard; sameSweetMoments: number };
 const rooms = new Map<string, Room>();
+function manifestDoodleIds() {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const candidates = [resolve(process.cwd(), 'client/public/doodles/manifest.json'), resolve(process.cwd(), '../client/public/doodles/manifest.json'), resolve(process.cwd(), 'dist/doodles/manifest.json'), resolve(process.cwd(), '../dist/doodles/manifest.json'), resolve(here, '../client/public/doodles/manifest.json'), resolve(here, '../../client/public/doodles/manifest.json'), resolve(here, '../../dist/doodles/manifest.json'), resolve(here, '../../../dist/doodles/manifest.json')];
+  for (const file of candidates) {
+    try { return new Set((JSON.parse(readFileSync(file, 'utf8')) as Array<{ id: string }>).map(item => item.id)); } catch { /* try the next monorepo-relative location */ }
+  }
+  return new Set<string>();
+}
+function validTimezone(value: unknown): value is string {
+  if (typeof value !== 'string' || value.length > 64) return false;
+  try { new Intl.DateTimeFormat('en', { timeZone: value }); return true; } catch { return false; }
+}
+function validDoodleId(value: unknown): value is string {
+  return typeof value === 'string' && value.length <= 40 && manifestDoodleIds().has(value);
+}
 const emptyScore = (): Scoreboard => ({ hangman: {}, cups: {}, poison: {}, cloud: {}, slapcount: {} });
 export const hashPasscode = (passcode: string) => {
   const pepper = process.env.ARCADE_PASSCODE_PEPPER;
@@ -16,7 +34,7 @@ export const hashPasscode = (passcode: string) => {
     ? createHmac('sha256', pepper).update(`room:${passcode}`).digest('hex')
     : createHash('sha256').update(passcode).digest('hex');
 };
-export function enterRoom(passcode: string, name: string, token: string, socketId: string): { room?: Room; error?: string; id?: string } {
+export function enterRoom(passcode: string, name: string, token: string, socketId: string, metadata: { timezone?: unknown; doodleId?: unknown; shareSky?: unknown } = {}): { room?: Room; error?: string; id?: string } {
   const key = hashPasscode(passcode); let room = rooms.get(key);
   if (!room) { room = { key, players: [], game: null, scoreboard: emptyScore(), sameSweetMoments: 0 }; rooms.set(key, room); }
   let player = room.players.find(p => p.id === token);
@@ -25,6 +43,9 @@ export function enterRoom(passcode: string, name: string, token: string, socketI
     if (room.players.length >= 2) return { error: 'This room is full.' };
     player = { id: token, name, online: true, socketId }; room.players.push(player);
   } else { player.online = true; player.socketId = socketId; }
+  if (metadata.shareSky === false) delete player.timezone;
+  else if (validTimezone(metadata.timezone)) player.timezone = metadata.timezone;
+  if (validDoodleId(metadata.doodleId)) player.doodleId = metadata.doodleId;
   if (room.game) room.game.paused = room.players.some(p => !p.online);
   return { room, id: player.id };
 }
@@ -36,8 +57,14 @@ export function disconnect(socketId: string) {
 }
 export function roomForSocket(socketId: string) { return [...rooms.values()].find(r => r.players.some(p => p.socketId === socketId)); }
 export function playerFor(room: Room, socketId: string) { return room.players.find(p => p.socketId === socketId); }
+export function updatePlayerDoodle(room: Room, playerId: string, doodleId: unknown): boolean {
+  const player = room.players.find(candidate => candidate.id === playerId);
+  if (!player || !validDoodleId(doodleId)) return false;
+  player.doodleId = doodleId;
+  return true;
+}
 export function lobbyView(room: Room, self: string, error?: string): RoomView {
-  const players = room.players.map(({ id, name, online }) => ({ id, name, online }));
+  const players = room.players.map(({ id, name, online, timezone, doodleId }) => ({ id, name, online, ...(timezone ? { timezone } : {}), ...(doodleId ? { doodleId } : {}) }));
   const other = room.players.find(p => p.id !== self);
   const gameView = room.game ? 'slapCount' in room.game ? slapViewFor(room.game, self) : 'cloudGame' in room.game ? cloudViewFor(room.game, self) : 'poisonA' in room.game ? poisonViewFor(room.game, self) : 'cups' in room.game ? cupsViewFor(room.game, self) : viewFor(room.game, self) : null;
   return { self, players, status: !other ? 'Waiting for your person…' : other.online ? `${other.name} is here 💗` : `${other.name} disconnected, waiting for them to come back`, game: gameView, scoreboard: room.scoreboard, sameSweetMoments: room.sameSweetMoments, ...(error ? { error } : {}) };

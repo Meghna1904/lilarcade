@@ -1,15 +1,13 @@
 import type { CloudPosition } from './index.js';
 
-export const CLOUD_WIDTH = 1000;
-export const CLOUD_HEIGHT = 1200;
 export const CLOUD_NUMBER_COUNT = 100;
 
-type CloudSizeClass = { min: number; max: number; weight: number };
-const SIZE_CLASSES: CloudSizeClass[] = [
-  { min: 62, max: 68, weight: 25 },
-  { min: 70, max: 74, weight: 35 },
-  { min: 76, max: 80, weight: 25 },
-  { min: 82, max: 88, weight: 15 },
+type SizeBand = { min: number; max: number; weight: number };
+const SIZE_BANDS: SizeBand[] = [
+  { min: 36, max: 42, weight: 25 },
+  { min: 42, max: 48, weight: 35 },
+  { min: 48, max: 54, weight: 25 },
+  { min: 54, max: 60, weight: 15 },
 ];
 
 function seedNumber(seed: number | string): number {
@@ -30,100 +28,84 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-export function cloudPaddedRadius(size: number): number { return size * 0.42 + 5; }
+export function cloudPaddedRadius(size: number): number { return size * .3 + 2; }
+
 function chooseSize(random: () => number): number {
   let pick = random() * 100;
-  for (const sizeClass of SIZE_CLASSES) {
-    pick -= sizeClass.weight;
-    if (pick < 0) return Math.round(sizeClass.min + random() * (sizeClass.max - sizeClass.min));
+  for (const band of SIZE_BANDS) {
+    pick -= band.weight;
+    if (pick < 0) return band.min + random() * (band.max - band.min);
   }
-  return 68;
+  return 30;
 }
 
-type Candidate = CloudPosition & { radius: number; tieBreak: number };
+type Cell = { col: number; row: number; n: number };
 
-function layoutAttempt(random: () => number, count: number): CloudPosition[] | null {
-  const candidates: Candidate[] = Array.from({ length: count }, (_, i) => ({
-    n: i + 1,
-    x: 0,
-    y: 0,
-    size: chooseSize(random),
-    rotation: Math.round(-14 + random() * 28),
-    colorIndex: Math.floor(random() * 7),
-    radius: 0,
-    tieBreak: random(),
-  })).map(item => ({ ...item, radius: cloudPaddedRadius(item.size) }))
-    .sort((a, b) => b.radius - a.radius || a.tieBreak - b.tieBreak);
-
-  const cellSize = 128;
-  const cells = new Map<string, Candidate[]>();
-  const placed: Candidate[] = [];
-  const key = (col: number, row: number) => `${col},${row}`;
-  for (const item of candidates) {
-    let accepted = false;
-    for (let tries = 0; tries < 200; tries++) {
-      const x = item.radius + random() * (CLOUD_WIDTH - 2 * item.radius);
-      const y = item.radius + random() * (CLOUD_HEIGHT - 2 * item.radius);
-      const col = Math.floor(x / cellSize), row = Math.floor(y / cellSize);
-      let overlaps = false;
-      for (let dc = -1; dc <= 1 && !overlaps; dc++) for (let dr = -1; dr <= 1 && !overlaps; dr++) {
-        for (const other of cells.get(key(col + dc, row + dr)) ?? []) {
-          const dx = x - other.x, dy = y - other.y, min = item.radius + other.radius;
-          if (dx * dx + dy * dy < min * min) { overlaps = true; break; }
-        }
-      }
-      if (overlaps) continue;
-      item.x = x;
-      item.y = y;
-      const nearby = placed.filter(other => {
-        const dx = x - other.x, dy = y - other.y;
-        const threshold = item.radius + other.radius + 8;
-        return dx * dx + dy * dy < threshold * threshold;
-      });
-      const startColor = item.colorIndex;
-      for (let offset = 0; offset < 7; offset++) {
-        const color = (startColor + offset) % 7;
-        if (!nearby.some(other => other.colorIndex === color)) { item.colorIndex = color; break; }
-        item.colorIndex = color;
-      }
-      const bucket = key(col, row);
-      cells.set(bucket, [...(cells.get(bucket) ?? []), item]);
-      placed.push(item);
-      accepted = true;
-      break;
-    }
-    if (!accepted) return null;
-  }
-  return placed.sort((a, b) => a.n - b.n).map(({ n, x, y, size, rotation, colorIndex }) => ({ n, x, y, size, rotation, colorIndex }));
-}
-
-function fallbackLayout(random: () => number, count: number): CloudPosition[] {
-  const cells = Array.from({ length: count }, (_, i) => i);
+function layoutAttempt(random: () => number, count: number, width: number, height: number, minFont: number, scale: number): CloudPosition[] | null {
+  const cols = Math.max(1, Math.ceil(Math.sqrt(count * width / height)));
+  const rows = Math.ceil(count / cols);
+  // Shuffle the positions, then assign the numbers in numeric order to those
+  // positions. Shuffling cells that already contain their number would only
+  // reorder the array; each number would still land in its original cell.
+  const cells: Cell[] = Array.from({ length: count }, (_, i) => ({ col: i % cols, row: Math.floor(i / cols), n: 0 }));
   for (let i = cells.length - 1; i > 0; i--) {
     const j = Math.floor(random() * (i + 1));
     [cells[i], cells[j]] = [cells[j], cells[i]];
   }
-  return Array.from({ length: count }, (_, i) => {
-    const cell = cells[i], row = Math.floor(cell / 10), col = cell % 10;
-    return {
-      n: i + 1,
-      x: 50 + col * 100 + (random() - 0.5) * 8,
-      y: 60 + row * 120 + (random() - 0.5) * 8,
-      size: chooseSize(random),
-      rotation: Math.round(-14 + random() * 28),
-      colorIndex: Math.floor(random() * 7),
-    };
-  });
+  cells.forEach((cell, i) => { cell.n = i + 1; });
+  const placed: CloudPosition[] = [];
+  const radii: number[] = [];
+  const usedCells = new Set<string>();
+  const colorOffset = Math.floor(random() * 7);
+
+  for (const cell of cells.slice(0, count)) {
+    const baseSize = chooseSize(random);
+    const size = Math.min(60, Math.max(minFont, baseSize * scale));
+    const radius = cloudPaddedRadius(size);
+    const left = Math.max(radius, width * .035);
+    const right = width - left;
+    const top = Math.max(radius, height * .035);
+    const bottom = height - top;
+    const stepX = cols > 1 ? (right - left) / (cols - 1) : (right - left) / 2;
+    const stepY = rows > 1 ? (bottom - top) / (rows - 1) : (bottom - top) / 2;
+    let accepted: { x: number; y: number } | undefined;
+    for (let attempt = 0; attempt < 200; attempt++) {
+      const jitterX = (random() - .5) * stepX * .02;
+      const jitterY = (random() - .5) * stepY * .02;
+      const x = cols > 1 ? left + cell.col * stepX + jitterX : width / 2 + jitterX;
+      const y = rows > 1 ? top + cell.row * stepY + jitterY : height / 2 + jitterY;
+      if (x < radius || x > width - radius || y < radius || y > height - radius) continue;
+      if (placed.some((other, i) => (x - other.x) ** 2 + (y - other.y) ** 2 < (radius + radii[i]) ** 2)) continue;
+      accepted = { x, y };
+      break;
+    }
+    if (!accepted) return null;
+    usedCells.add(`${cell.col},${cell.row}`);
+    const colorIndex = ((cell.col % 3) + (cell.row % 2) * 3 + colorOffset) % 7;
+    placed.push({ n: cell.n, x: accepted.x, y: accepted.y, size, rotation: Math.round(-14 + random() * 28), colorIndex });
+    radii.push(radius);
+  }
+
+  if (usedCells.size !== count) return null;
+  return placed.sort((a, b) => a.n - b.n);
 }
 
-/** Build a deterministic, shuffled cloud. Circle padding keeps adjacent number tags separated. */
-export function layoutCloud(seed: number | string, count = CLOUD_NUMBER_COUNT): CloudPosition[] {
+/** Build a seeded jittered-grid cloud in the measured arena's CSS-pixel coordinate space. */
+export function layoutCloud(seed: number | string, count = CLOUD_NUMBER_COUNT, width = 1000, height = 700): CloudPosition[] {
   if (!Number.isInteger(count) || count < 1 || count > CLOUD_NUMBER_COUNT) throw new RangeError('Cloud size must be an integer from 1 to 100.');
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) throw new RangeError('Cloud dimensions must be positive finite numbers.');
+  const minFont = width < 600 ? 22 : 26;
   const root = mulberry32(seedNumber(seed));
-  for (let restart = 0; restart < 64; restart++) {
-    const subSeed = Math.floor(root() * 4294967296);
-    const result = layoutAttempt(mulberry32(subSeed), count);
+  const cols = Math.max(1, Math.ceil(Math.sqrt(count * width / height)));
+  const minCell = Math.min(width / cols, height / Math.ceil(count / cols));
+  const fitScale = Math.min(1, minCell * .72 / 60);
+  for (let retry = 0; retry <= 8; retry++) {
+    const result = layoutAttempt(mulberry32(Math.floor(root() * 4294967296)), count, width, height, minFont, fitScale * .94 ** retry);
     if (result) return result;
   }
-  return fallbackLayout(root, count);
+
+  // The near-regular jittered grid is the guaranteed final fit for very small arenas.
+  const fallback = layoutAttempt(mulberry32(seedNumber(seed)), count, width, height, minFont, 0);
+  if (fallback) return fallback;
+  throw new Error('Unable to fit the requested cloud in the arena.');
 }

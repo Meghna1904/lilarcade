@@ -6,6 +6,9 @@ import { CandyArt, type CandyArtState } from './CandyArt';
 import { candyForTile, candyLines } from './candyConfig';
 import { useCandyAudio } from './useCandyAudio';
 import { ReactionBar } from '../../reactions/ReactionBar';
+import { DoodleResultPair } from '../../../doodles/DoodleResultPair';
+import { Doodle } from '../../../doodles/Doodle';
+import { playerDoodleId } from '../../../doodles/playerDoodle';
 
 type ArcadeSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 type Props = { game: PoisonView; self: string; players: RoomView['players']; socket: ArcadeSocket; sameSweetMoments: number };
@@ -137,14 +140,14 @@ export function PoisonGame({ game, self, players, socket, sameSweetMoments }: Pr
         {ended && game.endReason === 'sweetTie' && <>
           <div className="sweet-tie-stage">
             <CandyTray size={game.gridSize} self={self} opponent={opponent} players={players} selected={null} selectedTiles={[]} ownPoison={game.myPoison ?? []} opponentPoison={game.opponentPoison ?? []} hitTile={undefined} revealed={safeRevealed} disabled roundReveal showPoisonMarker={false} onChoose={() => {}} particles={[]} />
-            <SweetTieReveal sharedTiles={(game.myPoison ?? []).filter(tile => game.opponentPoison?.includes(tile))} gridSize={game.gridSize} selfName={selfName} opponentName={opponentName} round={game.round} onAgain={() => socket.emit('poisonNextRound')} onLobby={() => socket.emit('backToLobby')} />
+            <SweetTieReveal sharedTiles={(game.myPoison ?? []).filter(tile => game.opponentPoison?.includes(tile))} gridSize={game.gridSize} self={self} opponent={opponent} players={players} selfName={selfName} opponentName={opponentName} round={game.round} onAgain={() => socket.emit('poisonNextRound')} onLobby={() => socket.emit('backToLobby')} />
           </div>
         </>}
         {ended && game.endReason !== 'sweetTie' && <>
           <CandyTray size={game.gridSize} self={self} opponent={opponent} players={players} selected={null} selectedTiles={[]} ownPoison={game.myPoison ?? []} opponentPoison={game.opponentPoison ?? []} hitTile={hitTile} revealed={safeRevealed} disabled roundReveal showPoisonMarker={false} onChoose={() => {}} particles={[]} />
           <div className={`round-result poison-result ${game.roundWinner === self ? 'you-won' : ''}`}>
           {game.roundWinner === self && <div className="candy-confetti" aria-hidden="true">{Array.from({ length: 18 }, (_, i) => <i key={i} style={{ '--i': i, left: `${(i * 53) % 100}%` } as CSSProperties} />)}</div>}
-          <div className="result-sparkle">{game.roundWinner === self ? '✧' : '♡'}</div><span className="candy-result-kicker">{game.endReason === 'tapped' ? candyLines.poison[(game.round + 1) % candyLines.poison.length] : 'round over.'}</span><h2>{winnerName} {game.roundWinner === self ? 'win this round!' : 'wins this round!'}</h2>
+          <div className="result-sparkle">{game.roundWinner === self ? '✧' : '♡'}</div><DoodleResultPair players={players} winnerId={game.roundWinner}/><span className="candy-result-kicker">{game.endReason === 'tapped' ? candyLines.poison[(game.round + 1) % candyLines.poison.length] : 'round over.'}</span><h2>{winnerName} {game.roundWinner === self ? 'win this round!' : 'wins this round!'}</h2>
           <p>{game.endReason === 'forced' ? 'No safe sweets remained.' : game.loser === self ? 'Oh no, that sweet was poisoned.' : `${players.find(player => player.id === game.loser)?.name ?? 'Your person'} found the poisoned sweet.`} Both candies are revealed.</p>
           <div className="poison-reveals"><span>Yours: <b>{(game.myPoison ?? []).map(tile => `☠️ #${tile + 1}`).join(' ')}</b></span><span>{opponentName}: <b>{(game.opponentPoison ?? []).map(tile => `☠️ #${tile + 1}`).join(' ')}</b></span></div>
           <p className="match-score">{game.format === 'quick' ? 'A tiny victory for the scoreboard.' : `Match score: ${scoreA} – ${scoreB}`}</p>
@@ -157,12 +160,12 @@ export function PoisonGame({ game, self, players, socket, sameSweetMoments }: Pr
   </section>;
 }
 
-function SweetTieReveal({ sharedTiles, gridSize, selfName, opponentName, round, onAgain, onLobby }: { sharedTiles: number[]; gridSize: number; selfName: string; opponentName: string; round: number; onAgain: () => void; onLobby: () => void }) {
+function SweetTieReveal({ sharedTiles, gridSize, self, opponent, players, selfName, opponentName, round, onAgain, onLobby }: { sharedTiles: number[]; gridSize: number; self: string; opponent: string; players: RoomView['players']; selfName: string; opponentName: string; round: number; onAgain: () => void; onLobby: () => void }) {
   const copy = candyLines.sweetTie[(round - 1) % candyLines.sweetTie.length];
   const heroTile = sharedTiles[0] ?? 0;
   return <div className="sweet-tie-reveal" role="status" aria-live="polite">
     <div className="sweet-tie-confetti" aria-hidden="true">{Array.from({ length: 16 }, (_, i) => <i key={i} className={i % 3 === 0 ? 'heart' : 'sparkle'} style={{ '--i': i } as CSSProperties} />)}</div>
-    <div className="sweet-tie-characters" aria-hidden="true"><SmittenDoodle side="left" /><SmittenDoodle side="right" /></div>
+    <div className="sweet-tie-characters"><Doodle className="smitten-doodle left" id={playerDoodleId(players, players.find(player => player.id === self))} expression="happy" size="clamp(31px,11vw,55px)" name={selfName}/><Doodle className="smitten-doodle right" id={playerDoodleId(players, players.find(player => player.id === opponent))} expression="happy" size="clamp(31px,11vw,55px)" name={opponentName}/></div>
     <div className="sweet-tie-feature" style={{ '--tie-delay': '550ms' } as CSSProperties}>
       <span className="sweet-tie-kicker">A LITTLE SECRET REVEALED</span>
       <div className="sweet-tie-candy"><CandyArt candy={candyForTile(heroTile, gridSize)} state="poison" /></div>
@@ -172,10 +175,6 @@ function SweetTieReveal({ sharedTiles, gridSize, selfName, opponentName, round, 
       <div className="sweet-tie-actions"><button className="button primary" onClick={onAgain}>Play again <span>♡</span></button><button className="button text-button" onClick={onLobby}>Back to lobby</button></div>
     </div>
   </div>;
-}
-
-function SmittenDoodle({ side }: { side: 'left' | 'right' }) {
-  return <svg className={`smitten-doodle ${side}`} viewBox="0 0 72 72"><path d="M13 39c0-15 10-25 23-25s23 10 23 25-9 25-23 25S13 54 13 39Z" fill="#f4c18a" stroke="#865b65" strokeWidth="3"/><path d="M22 37q3-4 6 0m16 0q3-4 6 0" fill="none" stroke="#563a4e" strokeWidth="3" strokeLinecap="round"/><path d="M31 47q5 7 10 0" fill="none" stroke="#563a4e" strokeWidth="2.5" strokeLinecap="round"/><ellipse cx="23" cy="44" rx="5" ry="3" fill="#f28fa0" opacity=".8"/><ellipse cx="49" cy="44" rx="5" ry="3" fill="#f28fa0" opacity=".8"/><path d="M28 22q8-7 16 0" fill="none" stroke="#fff3d2" strokeWidth="3" strokeLinecap="round"/></svg>;
 }
 
 function CandyTray({ size, self, opponent, players, selected, selectedTiles = [], ownPoison, opponentPoison, hitTile, revealed, disabled, showPoisonMarker = false, roundReveal = false, onChoose, particles }: { size: number; self: string; opponent: string; players: RoomView['players']; selected: number | null; selectedTiles?: number[]; ownPoison: number[]; opponentPoison: number[]; hitTile?: number; revealed: Map<number, PoisonView['revealed'][number]>; disabled: boolean; showPoisonMarker?: boolean; roundReveal?: boolean; onChoose: (tile: number) => void; particles: SugarParticle[] }) {

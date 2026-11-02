@@ -20,7 +20,7 @@ export type CupsMove =
   | { type: 'cups:nextRound' }
   | { type: 'cups:backToLobby' }
   | { type: 'cups:reaction'; emoji: string };
-export type PlayerSummary = { id: string; name: string; online: boolean };
+export type PlayerSummary = { id: string; name: string; online: boolean; timezone?: string; doodleId?: string };
 export type Scoreboard = Record<GameId, Record<string, number>>;
 export type HangmanView = {
   game: 'hangman'; phase: 'setting' | 'playing' | 'roundOver' | 'matchOver';
@@ -53,7 +53,7 @@ export type CloudSettings = {
   huntTimeoutSeconds: 15 | 30 | 45 | 60;
 };
 export type CloudView = {
-  game: 'cloud'; phase: CloudPhase; layout: CloudPosition[];
+  game: 'cloud'; phase: CloudPhase; layoutSeed: number;
   roles: { caller: string; hunter: string }; round: number; format: 'quick' | 'bestOf3';
   settings: CloudSettings; tickCounts: Record<string, number>; matchScore: Record<string, number>;
   huntId: number; targetNumber?: number; callDeadline?: number; huntDeadline?: number;
@@ -64,14 +64,14 @@ export type CloudView = {
   lastReaction?: { player: string; emoji: string; at: number };
 };
 export type SlapSuit = 'heart' | 'star' | 'moon' | 'drop';
-export type SlapCard = { value: number; suit: SlapSuit };
+export type SlapCard = { value: number | 'W'; suit: SlapSuit };
 export type SlapSettings = { startingCards: number; penaltyCards: number; pace: 'manual' | 1200 | 1000 | 800; callMode: boolean };
 export type SlapPhase = 'ready' | 'playing' | 'resolving' | 'roundOver' | 'matchOver';
 export type SlapView = {
   game: 'slapcount'; phase: SlapPhase; starter: string; turn: string; round: number; format: 'quick' | 'bestOf3';
   settings: SlapSettings; deckSizes: Record<string, number>; myDeckSize: number; opponentDeckSize: number;
   pileSize: number; topCards: SlapCard[]; count: number | null; currentCardCount: number | null; currentCardId: number; currentCardSentAt: number;
-  matchWindowOpen: boolean; decisionPending: boolean; slapLockouts: Record<string, number>;
+  matchWindowOpen: boolean; decisionPending: boolean; slapPossible: boolean; slapLockouts: Record<string, number>;
   matchScore: Record<string, number>; laidCards: number; readyDeadline?: number; resolveDeadline?: number;
   roundWinner?: string; matchWinner?: string; draw?: boolean; paused: boolean; remainingMs?: number;
   lastReaction?: { player: string; emoji: string; at: number };
@@ -100,7 +100,8 @@ export type RoomView = {
   scoreboard: Scoreboard; sameSweetMoments: number; error?: string;
 };
 export type ClientToServerEvents = {
-  enter: (payload: { name: string; passcode: string; token: string }) => void;
+  enter: (payload: { name: string; passcode: string; token: string; timezone?: string; doodleId?: string; shareSky?: boolean }) => void;
+  'doodle:select': (payload: { doodleId: string }) => void;
   startGame: (payload: { game: GameId; format: MatchFormat; cups?: Omit<CupsSettings, 'format'>; poison?: Omit<PoisonSettings, 'format'>; cloud?: CloudSettings; slapCount?: SlapSettings }) => void;
   'slap:layCard': () => void;
   'slap:slap': (payload: { cardId: number }, ack?: (result: 'pending' | 'ignored' | 'wrong' | 'rejected') => void) => void;
@@ -126,6 +127,7 @@ export type ClientToServerEvents = {
   'cloud:callNumber': (payload: { n: number; huntId: number }) => void;
   'cloud:tick': (payload: { huntId: number }, ack?: (accepted: boolean) => void) => void;
   'cloud:findNumber': (payload: { n: number; huntId: number }) => void;
+  'cloud:requestState': () => void;
   'cloud:react': (payload: { emoji: string }) => void;
   'cloud:nextRound': () => void;
   'cloud:backToLobby': () => void;
@@ -137,4 +139,4 @@ export type ServerToClientEvents = {
   'slap:resolved': (payload: { cardId: number; result: 'pile' | 'wrong'; winner?: string; loser?: string; penalty?: number }) => void;
   'slap:pong': (payload: { pingId: number; serverTime: number }) => void;
 };
-export { CLOUD_HEIGHT, CLOUD_NUMBER_COUNT, CLOUD_WIDTH, cloudPaddedRadius, layoutCloud } from './cloudLayout.js';
+export { CLOUD_NUMBER_COUNT, cloudPaddedRadius, layoutCloud } from './cloudLayout.js';

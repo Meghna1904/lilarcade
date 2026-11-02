@@ -1,7 +1,7 @@
-import type { SlapSuit } from '@arcade/shared';
+import type { SlapCard, SlapSuit } from '@arcade/shared';
 import { slapSuits } from './slapConfig';
 
-export function Card({ value, suit, faceDown = false, small = false, wobble = false }: { value?: number; suit?: SlapSuit; faceDown?: boolean; small?: boolean; wobble?: boolean }) {
+export function Card({ value, suit, faceDown = false, small = false, wobble = false }: { value?: SlapCard['value']; suit?: SlapSuit; faceDown?: boolean; small?: boolean; wobble?: boolean }) {
   const style = suit ? slapSuits[suit] : undefined;
   if (faceDown) return <svg className={`slap-card ${small ? 'small' : ''} ${wobble ? 'wobble' : ''}`} viewBox="0 0 100 140" aria-hidden="true"><rect x="3" y="3" width="94" height="134" rx="12" fill="#e9dfd1"/><rect x="8" y="8" width="84" height="124" rx="9" fill="#403751"/><path d="M17 17h66v106H17z" fill="none" stroke="#bfa9e8" strokeWidth="2" strokeDasharray="3 4"/><path d="M50 45l8 13 15 2-11 10 3 15-15-8-15 8 3-15-11-10 15-2z" fill="#ffd98a"/><circle cx="50" cy="67" r="3" fill="#ff8a80"/></svg>;
   if (!style || value === undefined) return null;
