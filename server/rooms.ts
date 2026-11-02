@@ -1,13 +1,15 @@
 import { createHash, createHmac } from 'node:crypto';
-import type { CupId, GameId, MatchFormat, RoomView, Scoreboard, CupsSettings, PoisonSettings } from '@arcade/shared';
+import { isReactionId, type CloudMove, type CloudSettings, type CupId, type GameId, type MatchFormat, type RoomView, type Scoreboard, type CupsSettings, type PoisonSettings, type SlapMove, type SlapSettings } from '@arcade/shared';
 import { createHangman, guess, setWord, viewFor, type HangmanGame } from './games/hangman.js';
 import { createCups, getViewFor as cupsViewFor, lockSecret, reaction as cupsReaction, submitGuess, useHint, validSettings, type CupsGame } from './games/cups.js';
 import { checkForcedLoss, createPoison, getViewFor as poisonViewFor, lockPick, pickTile, react as poisonReaction, resolveForcedLoss, tapTile, timeoutTurn, validPoisonSettings, type PoisonGame } from './games/poison.js';
+import { createCloudGame, getViewFor as cloudViewFor, handleMove as handleCloudMove, type CloudGame } from './games/cloud.js';
+import { completeResolve, createGame as createSlapCount, getViewFor as slapViewFor, handleMove as handleSlapMove, markCardVisible, resolveWindow, startPlaying, type SlapCountGame } from './games/slapcount.js';
 type Player = { id: string; name: string; online: boolean; socketId: string };
-type Game = HangmanGame | CupsGame | PoisonGame;
+type Game = HangmanGame | CupsGame | PoisonGame | CloudGame | SlapCountGame;
 type Room = { key: string; players: Player[]; game: Game | null; scoreboard: Scoreboard; sameSweetMoments: number };
 const rooms = new Map<string, Room>();
-const emptyScore = (): Scoreboard => ({ hangman: {}, cups: {}, poison: {} });
+const emptyScore = (): Scoreboard => ({ hangman: {}, cups: {}, poison: {}, cloud: {}, slapcount: {} });
 export const hashPasscode = (passcode: string) => {
   const pepper = process.env.ARCADE_PASSCODE_PEPPER;
   return pepper
@@ -37,10 +39,10 @@ export function playerFor(room: Room, socketId: string) { return room.players.fi
 export function lobbyView(room: Room, self: string, error?: string): RoomView {
   const players = room.players.map(({ id, name, online }) => ({ id, name, online }));
   const other = room.players.find(p => p.id !== self);
-  const gameView = room.game ? 'poisonA' in room.game ? poisonViewFor(room.game, self) : 'cups' in room.game ? cupsViewFor(room.game, self) : viewFor(room.game, self) : null;
+  const gameView = room.game ? 'slapCount' in room.game ? slapViewFor(room.game, self) : 'cloudGame' in room.game ? cloudViewFor(room.game, self) : 'poisonA' in room.game ? poisonViewFor(room.game, self) : 'cups' in room.game ? cupsViewFor(room.game, self) : viewFor(room.game, self) : null;
   return { self, players, status: !other ? 'Waiting for your person…' : other.online ? `${other.name} is here 💗` : `${other.name} disconnected, waiting for them to come back`, game: gameView, scoreboard: room.scoreboard, sameSweetMoments: room.sameSweetMoments, ...(error ? { error } : {}) };
 }
-export function startGame(room: Room, player: string, game: GameId, format: MatchFormat, cups?: Omit<CupsSettings, 'format'>, poison?: Omit<PoisonSettings, 'format'>) {
+export function startGame(room: Room, player: string, game: GameId, format: MatchFormat, cups?: Omit<CupsSettings, 'format'>, poison?: Omit<PoisonSettings, 'format'>, cloud?: CloudSettings, slapCount?: SlapSettings) {
   if (room.players.length !== 2 || room.players.some(p => !p.online)) return 'Wait until both of you are here.';
   if (room.game && room.game.phase !== 'matchOver') return 'A game is already in progress.';
   const other = room.players.find(p => p.id !== player)!.id;
@@ -55,7 +57,86 @@ export function startGame(room: Room, player: string, game: GameId, format: Matc
     if (!validPoisonSettings(settings)) return 'Choose a valid Poison Challenge setup.';
     room.game = createPoison(player, other, format, settings);
   }
+  else if (game === 'cloud') {
+    if (format !== 'quick' && format !== 'bestOf3') return 'Cloud Race supports Quick and Best of 3.';
+    const settings: CloudSettings = {
+      targetBoxes: cloud?.targetBoxes ?? 100,
+      catchBonus: cloud?.catchBonus ?? 1,
+      layoutMode: cloud?.layoutMode ?? 'hunt',
+      huntTimeoutSeconds: cloud?.huntTimeoutSeconds ?? 45,
+    };
+    if (!validCloudSettings(settings)) return 'Choose valid Cloud Race settings.';
+    room.game = createCloudGame(player, other, player, format, settings);
+  }
+  else if (game === 'slapcount') {
+    if (format !== 'quick' && format !== 'bestOf3') return 'Slap Count supports Quick and Best of 3.';
+    const settings: SlapSettings = { startingCards: slapCount?.startingCards ?? 20, penaltyCards: slapCount?.penaltyCards ?? 2, pace: slapCount?.pace ?? 'manual', callMode: slapCount?.callMode ?? false };
+    if (!validSlapSettings(settings)) return 'Choose valid Slap Count settings.';
+    room.game = createSlapCount(player, other, player, format, settings);
+  }
   else return 'That game is coming soon.';
+  return null;
+}
+
+export function validSlapSettings(settings: SlapSettings) {
+  return Number.isInteger(settings.startingCards) && settings.startingCards >= 10 && settings.startingCards <= 20 &&
+    Number.isInteger(settings.penaltyCards) && settings.penaltyCards >= 1 && settings.penaltyCards <= 3 &&
+    (settings.pace === 'manual' || (typeof settings.pace === 'number' && [800,1000,1200].includes(settings.pace))) && typeof settings.callMode === 'boolean';
+}
+
+function recordSlapRoundWin(room: Room, game: SlapCountGame, priorPhase: SlapCountGame['phase']) {
+  if ((game.phase === 'roundOver' || game.phase === 'matchOver') && priorPhase !== 'roundOver' && priorPhase !== 'matchOver' && game.roundWinner) {
+    room.scoreboard.slapcount[game.roundWinner] = (room.scoreboard.slapcount[game.roundWinner] ?? 0) + 1;
+  }
+}
+
+export function slapMove(room: Room, player: string, move: SlapMove, now = Date.now()) {
+  const game = room.game;
+  if (!game || !('slapCount' in game)) return { changed: false, error: 'Start a Slap Count game first.' };
+  const priorPhase = game.phase;
+  const result = handleSlapMove(game, player, move, now);
+  if (!result.error) recordSlapRoundWin(room, game, priorPhase);
+  return result;
+}
+
+export function slapResolveWindow(room: Room, now = Date.now()) {
+  const game = room.game;
+  if (!game || !('slapCount' in game)) return { changed: false };
+  const prior = game.phase;
+  const result = resolveWindow(game, now);
+  recordSlapRoundWin(room, game, prior);
+  return result;
+}
+
+export function slapStartPlaying(room: Room, now = Date.now()) {
+  const game = room.game;
+  if (!game || !('slapCount' in game)) return false;
+  const changed = startPlaying(game, now);
+  return changed;
+}
+
+export function slapCompleteResolve(room: Room, now = Date.now()) {
+  const game = room.game;
+  if (!game || !('slapCount' in game)) return false;
+  const prior = game.phase;
+  const changed = completeResolve(game, now);
+  if (changed && game.phase === 'roundOver' && prior !== 'roundOver' && game.roundWinner) room.scoreboard.slapcount[game.roundWinner] = (room.scoreboard.slapcount[game.roundWinner] ?? 0) + 1;
+  return changed;
+}
+
+export function markSlapCardVisible(room: Room, player: string) {
+  if (room.game && 'slapCount' in room.game) markCardVisible(room.game, player);
+}
+
+export function nextSlapRound(room: Room, player: string) {
+  const game = room.game;
+  if (!game || !('slapCount' in game) || (game.phase !== 'roundOver' && game.phase !== 'matchOver')) return 'This Slap Count round is still in progress.';
+  if (player !== game.playerA && player !== game.playerB) return 'You are not in this game.';
+  if (room.players.some(p => !p.online)) return 'Wait until your person is back to play again.';
+  const rematch = game.phase === 'matchOver';
+  const prior = rematch ? game.matchStarter : game.starter;
+  const starter = prior === game.playerA ? game.playerB : game.playerA;
+  room.game = createSlapCount(game.playerA, game.playerB, starter, game.format, game.settings, rematch ? 1 : game.round + 1, rematch ? {} : game.matchScore, Date.now(), rematch ? starter : game.matchStarter, game.currentCardId);
   return null;
 }
 export function setHangman(room: Room, player: string, word: string, hint: string) {
@@ -68,7 +149,35 @@ export function makeGuess(room: Room, player: string, letter: string) {
   if (!error && before !== game.matchScore[game.setter] + game.matchScore[game.guesser]) room.scoreboard.hangman[game.roundWinner!] = (room.scoreboard.hangman[game.roundWinner!] ?? 0) + 1;
   return error;
 }
-export function reaction(room: Room, player: string, emoji: string) { if (room.game?.phase === 'playing' && ['😂','😬','😭','🎉'].includes(emoji)) room.game.lastReaction = { player, emoji, at: Date.now() }; }
+export function reaction(room: Room, player: string, emoji: string) { if (room.game?.phase === 'playing' && isReactionId(emoji)) room.game.lastReaction = { player, emoji, at: Date.now() }; }
+
+export function validCloudSettings(settings: CloudSettings): boolean {
+  return [30, 50, 100].includes(settings.targetBoxes) && [0, 1, 2, 3].includes(settings.catchBonus) &&
+    (settings.layoutMode === 'hunt' || settings.layoutMode === 'round') && [15, 30, 45, 60].includes(settings.huntTimeoutSeconds);
+}
+
+export function cloudMove(room: Room, player: string, move: CloudMove, now = Date.now()) {
+  const game = room.game;
+  if (!game || !('cloudGame' in game)) return { changed: false, error: 'Start a Cloud Race first.' };
+  const previousPhase = game.phase;
+  const result = handleCloudMove(game, player, move, now);
+  if (!result.error && previousPhase !== 'matchOver' && game.phase === 'matchOver' && game.matchWinner) {
+    room.scoreboard.cloud[game.matchWinner] = (room.scoreboard.cloud[game.matchWinner] ?? 0) + 1;
+  }
+  return result;
+}
+
+export function nextCloudRound(room: Room, player: string) {
+  const game = room.game;
+  if (!game || !('cloudGame' in game) || (game.phase !== 'roundOver' && game.phase !== 'matchOver')) return 'This Cloud Race is still in progress.';
+  if (player !== game.playerA && player !== game.playerB) return 'You are not in this game.';
+  if (room.players.some(p => !p.online)) return 'Wait until your person is back to play again.';
+  const rematch = game.phase === 'matchOver';
+  const priorStarter = rematch ? game.matchStarterCaller : game.starterCaller;
+  const starter = priorStarter === game.playerA ? game.playerB : game.playerA;
+  room.game = createCloudGame(game.playerA, game.playerB, starter, game.format, game.settings, rematch ? 1 : game.round + 1, rematch ? {} : game.matchScore, game.huntId + 1, Date.now(), rematch ? starter : game.matchStarterCaller);
+  return null;
+}
 export function cupsLock(room: Room, player: string, order: CupId[]) {
   return room.game && 'cups' in room.game ? lockSecret(room.game, player, order) : 'Start a Cup Ordering game first.';
 }
@@ -139,7 +248,9 @@ export function nextPoisonRound(room: Room, player: string) {
 export function nextHangman(room: Room, player: string) {
   const g = room.game;
   if (!g || (g.phase !== 'roundOver' && g.phase !== 'matchOver')) return 'This round is still in progress.';
+  if ('slapCount' in g) return nextSlapRound(room, player);
   if ('poisonA' in g) return nextPoisonRound(room, player);
+  if ('cloudGame' in g) return nextCloudRound(room, player);
   if ('cups' in g) {
     if (player !== g.guesser && player !== g.arranger) return 'You are not in this game.';
   } else if (player !== g.guesser && player !== g.setter) return 'You are not in this game.';

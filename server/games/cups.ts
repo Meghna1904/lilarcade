@@ -1,4 +1,4 @@
-import type { CupId, CupsGuess, CupsMove, CupsPhase, CupsSettings, CupsView, MatchFormat } from '@arcade/shared';
+import { isReactionId, type CupId, type CupsGuess, type CupsMove, type CupsPhase, type CupsSettings, type CupsView, type MatchFormat } from '@arcade/shared';
 import { CUP_IDS } from '@arcade/shared';
 
 export type CupsGame = {
@@ -95,7 +95,7 @@ export function useHint(g: CupsGame, player: string, slot: number) {
 }
 
 export function reaction(g: CupsGame, player: string, emoji: string) {
-  if (g.phase === 'guessing' && ['😂', '😬', '😭', '🎉', '🙈'].includes(emoji)) {
+  if (g.phase === 'guessing' && isReactionId(emoji)) {
     g.lastReaction = { player, emoji, at: Date.now() };
   }
 }

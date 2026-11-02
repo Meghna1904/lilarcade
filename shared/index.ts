@@ -1,4 +1,6 @@
-export type GameId = 'hangman' | 'cups' | 'poison';
+export type GameId = 'hangman' | 'cups' | 'poison' | 'cloud' | 'slapcount';
+export { REACTIONS, isReactionId } from './reactions.js';
+export type { ReactionId } from './reactions.js';
 export type MatchFormat = 'quick' | 'bestOf3' | 'bestOf5';
 export type CupId = 'coral' | 'sky' | 'butter' | 'mint' | 'lavender' | 'peach';
 export const CUP_IDS: CupId[] = ['coral', 'sky', 'butter', 'mint', 'lavender', 'peach'];
@@ -42,19 +44,71 @@ export type PoisonView = {
   opponentPoison?: number[]; hitTile?: number; loser?: string; roundWinner?: string; endReason?: RoundEndReason;
   lastReaction?: { player: string; emoji: string; at: number };
 };
+export type CloudPosition = { n: number; x: number; y: number; size: number; rotation: number; colorIndex: number };
+export type CloudPhase = 'calling' | 'hunting' | 'swapping' | 'roundOver' | 'matchOver';
+export type CloudSettings = {
+  targetBoxes: 30 | 50 | 100;
+  catchBonus: 0 | 1 | 2 | 3;
+  layoutMode: 'hunt' | 'round';
+  huntTimeoutSeconds: 15 | 30 | 45 | 60;
+};
+export type CloudView = {
+  game: 'cloud'; phase: CloudPhase; layout: CloudPosition[];
+  roles: { caller: string; hunter: string }; round: number; format: 'quick' | 'bestOf3';
+  settings: CloudSettings; tickCounts: Record<string, number>; matchScore: Record<string, number>;
+  huntId: number; targetNumber?: number; callDeadline?: number; huntDeadline?: number;
+  lockoutUntil?: number; wrongTapId: number; swapReason?: 'caught' | 'timeout';
+  nextCaller?: string; nextHunter?: string; swapDeadline?: number;
+  remainingMs?: number;
+  roundWinner?: string; matchWinner?: string; paused: boolean;
+  lastReaction?: { player: string; emoji: string; at: number };
+};
+export type SlapSuit = 'heart' | 'star' | 'moon' | 'drop';
+export type SlapCard = { value: number; suit: SlapSuit };
+export type SlapSettings = { startingCards: number; penaltyCards: number; pace: 'manual' | 1200 | 1000 | 800; callMode: boolean };
+export type SlapPhase = 'ready' | 'playing' | 'resolving' | 'roundOver' | 'matchOver';
+export type SlapView = {
+  game: 'slapcount'; phase: SlapPhase; starter: string; turn: string; round: number; format: 'quick' | 'bestOf3';
+  settings: SlapSettings; deckSizes: Record<string, number>; myDeckSize: number; opponentDeckSize: number;
+  pileSize: number; topCards: SlapCard[]; count: number | null; currentCardCount: number | null; currentCardId: number; currentCardSentAt: number;
+  matchWindowOpen: boolean; decisionPending: boolean; slapLockouts: Record<string, number>;
+  matchScore: Record<string, number>; laidCards: number; readyDeadline?: number; resolveDeadline?: number;
+  roundWinner?: string; matchWinner?: string; draw?: boolean; paused: boolean; remainingMs?: number;
+  lastReaction?: { player: string; emoji: string; at: number };
+};
 export type PoisonMove =
   | { type: 'poison:pickTile'; tile: number }
   | { type: 'poison:lockPick' }
   | { type: 'poison:tapTile'; tile: number; turnNumber: number }
   | { type: 'poison:react'; emoji: string }
   | { type: 'poison:nextRound' };
+export type CloudMove =
+  | { type: 'cloud:callNumber'; n: number; huntId: number }
+  | { type: 'cloud:tick'; huntId: number }
+  | { type: 'cloud:findNumber'; n: number; huntId: number }
+  | { type: 'cloud:react'; emoji: string }
+  | { type: 'cloud:nextRound' }
+  | { type: 'cloud:backToLobby' };
+export type SlapMove =
+  | { type: 'slap:layCard' }
+  | { type: 'slap:slap'; cardId: number }
+  | { type: 'slap:react'; emoji: string }
+  | { type: 'slap:nextRound' }
+  | { type: 'slap:backToLobby' };
 export type RoomView = {
-  self: string; players: PlayerSummary[]; status: string; game: HangmanView | CupsView | PoisonView | null;
+  self: string; players: PlayerSummary[]; status: string; game: HangmanView | CupsView | PoisonView | CloudView | SlapView | null;
   scoreboard: Scoreboard; sameSweetMoments: number; error?: string;
 };
 export type ClientToServerEvents = {
   enter: (payload: { name: string; passcode: string; token: string }) => void;
-  startGame: (payload: { game: GameId; format: MatchFormat; cups?: Omit<CupsSettings, 'format'>; poison?: Omit<PoisonSettings, 'format'> }) => void;
+  startGame: (payload: { game: GameId; format: MatchFormat; cups?: Omit<CupsSettings, 'format'>; poison?: Omit<PoisonSettings, 'format'>; cloud?: CloudSettings; slapCount?: SlapSettings }) => void;
+  'slap:layCard': () => void;
+  'slap:slap': (payload: { cardId: number }, ack?: (result: 'pending' | 'ignored' | 'wrong' | 'rejected') => void) => void;
+  'slap:ping': (payload: { pingId: number; clientTime: number }) => void;
+  'slap:pong': (payload: { pingId: number }) => void;
+  'slap:react': (payload: { emoji: string }) => void;
+  'slap:nextRound': () => void;
+  'slap:backToLobby': () => void;
   setHangmanWord: (payload: { word: string; hint: string }) => void;
   guessLetter: (payload: { letter: string }) => void;
   hangmanReaction: (payload: { emoji: string }) => void;
@@ -69,6 +123,18 @@ export type ClientToServerEvents = {
   poisonTapTile: (payload: { tile: number; turnNumber: number }) => void;
   poisonReact: (payload: { emoji: string }) => void;
   poisonNextRound: () => void;
+  'cloud:callNumber': (payload: { n: number; huntId: number }) => void;
+  'cloud:tick': (payload: { huntId: number }, ack?: (accepted: boolean) => void) => void;
+  'cloud:findNumber': (payload: { n: number; huntId: number }) => void;
+  'cloud:react': (payload: { emoji: string }) => void;
+  'cloud:nextRound': () => void;
+  'cloud:backToLobby': () => void;
   backToLobby: () => void;
 };
-export type ServerToClientEvents = { roomState: (state: RoomView) => void; joinError: (message: string) => void; actionError: (message: string) => void };
+export type ServerToClientEvents = {
+  roomState: (state: RoomView) => void; joinError: (message: string) => void; actionError: (message: string) => void;
+  'slap:cardLaid': (payload: { cardId: number; card: SlapCard; count: number | null; serverTime: number }) => void;
+  'slap:resolved': (payload: { cardId: number; result: 'pile' | 'wrong'; winner?: string; loser?: string; penalty?: number }) => void;
+  'slap:pong': (payload: { pingId: number; serverTime: number }) => void;
+};
+export { CLOUD_HEIGHT, CLOUD_NUMBER_COUNT, CLOUD_WIDTH, cloudPaddedRadius, layoutCloud } from './cloudLayout.js';

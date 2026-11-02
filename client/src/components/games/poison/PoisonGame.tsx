@@ -5,11 +5,11 @@ import type { ClientToServerEvents, PoisonSettings, PoisonView, RoomView, Server
 import { CandyArt, type CandyArtState } from './CandyArt';
 import { candyForTile, candyLines } from './candyConfig';
 import { useCandyAudio } from './useCandyAudio';
+import { ReactionBar } from '../../reactions/ReactionBar';
 
 type ArcadeSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 type Props = { game: PoisonView; self: string; players: RoomView['players']; socket: ArcadeSocket; sameSweetMoments: number };
 type SugarParticle = { id: number; tile: number; color: string; kind: 'crumb' | 'sparkle'; dx: string; dy: string };
-const reactions = ['😂', '😬', '😭', '🎉', '🙈'];
 
 export function PoisonGame({ game, self, players, socket, sameSweetMoments }: Props) {
   const [pendingTile, setPendingTile] = useState<number | null>(null);
@@ -132,7 +132,7 @@ export function PoisonGame({ game, self, players, socket, sameSweetMoments }: Pr
           <div className="poison-turn-banner"><div><span className="eyebrow">{forced ? 'NO WAY OUT' : isMyTurn ? 'YOUR TURN' : `${opponentName.toUpperCase()} IS CHOOSING`}</span><h2>{forced ? 'Only the poisoned sweet is left…' : isMyTurn ? candyLines.yourTurn[game.round % candyLines.yourTurn.length] : `${opponentName} is choosing…`}</h2><p>{forced ? 'A tiny dramatic pause…' : game.revealed.length ? candyLines.safe[(game.revealed.length - 1) % candyLines.safe.length] : isMyTurn ? candyLines.thoughts[game.round % candyLines.thoughts.length] : 'Take a breath. Watch the candy tray.'}</p></div>{game.settings.timerEnabled && <div className="poison-timer" aria-label={`${timerSeconds} seconds remaining`}><b>{timerSeconds}</b><small>sec</small></div>}</div>
           <CandyTray size={game.gridSize} self={self} opponent={opponent} players={players} selected={pendingTile} selectedTiles={[]} ownPoison={game.myPoison ?? []} opponentPoison={[]} hitTile={undefined} revealed={safeRevealed} disabled={!canTap} onChoose={choose} particles={particles} />
           {isMyTurn && game.settings.confirmMode && <button className="button primary poison-confirm" disabled={!canTap || pendingTile === null} onClick={() => sendTap()}>Taste it 😬 <span>→</span></button>}
-          {!isMyTurn && <ReactionBar onReact={emoji => socket.emit('poisonReact', { emoji })} lastReaction={game.lastReaction} self={self} />}
+          {!isMyTurn && <ReactionBar onReact={id => socket.emit('poisonReact', { emoji: id })} />}
         </>}
         {ended && game.endReason === 'sweetTie' && <>
           <div className="sweet-tie-stage">
@@ -201,10 +201,6 @@ function CandyTray({ size, self, opponent, players, selected, selectedTiles = []
       </button>;
     })}
   </div>;
-}
-
-function ReactionBar({ onReact, lastReaction, self }: { onReact: (emoji: string) => void; lastReaction?: PoisonView['lastReaction']; self: string }) {
-  return <div className="poison-reaction-bar"><span>Send a little feeling:</span>{reactions.map(emoji => <button key={emoji} aria-label={`Send ${emoji} reaction`} onClick={() => onReact(emoji)}>{emoji}</button>)}{lastReaction && <small>{lastReaction.emoji} from {lastReaction.player === self ? 'you' : 'your person'}</small>}</div>;
 }
 
 export function PoisonLobbyCard({ onStart }: { onStart: (format: 'quick' | 'bestOf3' | 'bestOf5', settings: Omit<PoisonSettings, 'format'>) => void }) {

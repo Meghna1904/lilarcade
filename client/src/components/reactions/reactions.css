@@ -1,0 +1,8 @@
+.floating-reaction-layer{position:fixed;inset:0;z-index:150;pointer-events:none;overflow:hidden}
+.floating-reaction{position:absolute;display:grid;place-items:center;width:64px;height:64px;margin:-32px 0 0 -32px;animation:reaction-float-up 1.5s cubic-bezier(.2,.75,.35,1) both;filter:drop-shadow(0 4px 10px #14101c66)}
+.floating-reaction-lottie{width:64px;height:64px}
+.floating-reaction-fallback{font-size:43px;line-height:1;animation:reaction-fallback-pop .25s ease-out both}
+@keyframes reaction-float-up{0%{opacity:0;transform:translateY(8px) scale(.7)}12%{opacity:1;transform:translateY(0) scale(1)}75%{opacity:1;transform:translateY(-62px) scale(1.05)}100%{opacity:0;transform:translateY(-78px) scale(.9)}}
+@keyframes reaction-fallback-pop{0%{transform:scale(.7)}70%{transform:scale(1.12)}100%{transform:scale(1)}}
+@keyframes reaction-fade{from{opacity:0}to{opacity:1}}
+@media(prefers-reduced-motion:reduce){.floating-reaction{animation:reaction-fade .8s ease-out both!important}.floating-reaction-fallback{animation:none}}

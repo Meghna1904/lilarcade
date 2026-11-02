@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import type { MatchFormat, PoisonGridSize, PoisonPhase, PoisonSettings, PoisonView, RevealedTile, RoundEndReason } from '@arcade/shared';
+import { isReactionId, type MatchFormat, type PoisonGridSize, type PoisonPhase, type PoisonSettings, type PoisonView, type RevealedTile, type RoundEndReason } from '@arcade/shared';
 
 // ─── Internal game state (server only) ───────────────────────────────────────
 
@@ -263,7 +263,7 @@ export function resolveForcedLoss(g: PoisonGame): string | null {
 }
 
 export function react(g: PoisonGame, player: string, emoji: string): void {
-  if (['😂', '😬', '😭', '🎉', '🙈'].includes(emoji))
+  if (isReactionId(emoji))
     g.lastReaction = { player, emoji, at: Date.now() };
 }
 
