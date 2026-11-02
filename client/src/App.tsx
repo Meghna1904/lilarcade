@@ -58,7 +58,7 @@ export default function App() {
   const game = room?.game;
 
   return <main className={`app-shell ${game?.game === 'slapcount' ? 'slap-app-shell' : ''} ${game?.game === 'cloud' && game.phase === 'hunting' && game.roles.caller === room?.self ? 'cloud-marking-app-shell' : ''}`}>
-    <FloatingReactions reaction={game?.lastReaction} />
+    <FloatingReactions reaction={game?.lastReaction} self={room?.self} />
     <header className="topbar"><a className="brand" href="#home" onClick={e => { e.preventDefault(); if (room) socket.emit('backToLobby'); }}><span className="brand-icon">✦</span><span>our little <b>arcade</b></span></a><span className={`connection ${connected ? 'online' : ''}`}><i />{connected ? 'connected' : 'reconnecting…'}</span></header>
     {!room ? <section className="landing">
       <div className="landing-copy"><div className="eyebrow"><span>✧</span> JUST FOR TWO <span>✧</span></div><h1>A little place<br />for <em>us</em> to play.</h1><p>Pick a game, settle in, and make a tiny memory together.</p><div className="floaty floaty-one">☾</div><div className="floaty floaty-two">✦</div></div>
