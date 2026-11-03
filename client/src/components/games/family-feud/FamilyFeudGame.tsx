@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import type { ClientToServerEvents, FamilyFeudView, PlayerSummary, ServerToClientEvents } from '@arcade/shared';
 import { Doodle } from '../../../doodles/Doodle';
+import { useCandyAudio } from '../poison/useCandyAudio';
 import './family-feud.css';
 
 type Props = { game: FamilyFeudView; self: string; players: PlayerSummary[]; socket: Socket<ServerToClientEvents, ClientToServerEvents> };
@@ -10,6 +11,9 @@ export function FamilyFeudGame({ game, self, players, socket }: Props) {
   const [seconds, setSeconds] = useState(15);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const { muted, toggleMute, unlock, play } = useCandyAudio();
+  const previousPhase = useRef(game.phase);
+  const lastTick = useRef<number | null>(null);
   const me = players.find(player => player.id === self);
   const otherId = game.players.find(id => id !== self)!;
   const other = players.find(player => player.id === otherId);
@@ -26,25 +30,36 @@ export function FamilyFeudGame({ game, self, players, socket }: Props) {
     tick(); const timer = window.setInterval(tick, 100);
     return () => window.clearInterval(timer);
   }, [game.deadline, game.phase, game.serverNow]);
+  useEffect(() => {
+    if (game.phase === 'answering' && seconds > 0 && seconds <= 5 && lastTick.current !== seconds) {
+      lastTick.current = seconds;
+      play('familyTick');
+    }
+    if (game.phase !== 'answering') lastTick.current = null;
+  }, [game.phase, play, seconds]);
+  useEffect(() => {
+    if (previousPhase.current === 'answering' && (game.phase === 'reveal' || game.phase === 'matchOver')) play('familyReveal');
+    previousPhase.current = game.phase;
+  }, [game.phase, play]);
   const total = (id: string) => game.scores[id] ?? 0;
   const names = (id: string) => players.find(player => player.id === id)?.name ?? 'Player';
   const setScore = (target: string, matchIndex: number | null, points: number) => socket.emit('familyfeud:score', { target, matchIndex, points });
   const entry = (target: string) => game.results?.[target];
 
   return <section className="family-feud-screen">
-    <header className="ff-header"><button className="ff-lobby" onClick={() => socket.emit('backToLobby')}>← <span>Arcade</span></button><div className="ff-brand">Family <b>Feud</b><small>JUST US</small></div><span className="ff-host">{isHost ? 'HOST' : `HOST · ${names(game.host)}`}</span></header>
+    <header className="ff-header"><button className="ff-lobby" onClick={() => socket.emit('backToLobby')}>← <span>Arcade</span></button><div className="ff-brand">Family <b>Feud</b><small>JUST US</small></div><div className="ff-header-right"><span className="ff-host">{isHost ? 'HOST' : `HOST · ${names(game.host)}`}</span><button className="ff-sound-toggle" type="button" aria-pressed={!muted} aria-label={muted ? 'Turn sound on' : 'Mute sound'} onClick={toggleMute}>{muted ? '♪̸' : '♫'}<span>{muted ? 'Sound off' : 'Sound on'}</span></button></div></header>
     <div className="ff-shell">
       <div className="ff-playerline"><Player player={me} score={total(self)} label={self === game.host ? 'HOST' : 'PLAYER'}/><div className="ff-versus">♡<small>VS</small></div><Player player={other} score={total(otherId)} label={otherId === game.host ? 'HOST' : 'PLAYER'}/></div>
       {game.phase === 'setup' ? <main className="ff-panel ff-setup">
         <p className="ff-kicker">A LITTLE SURVEY SHOWDOWN</p><h1>Family Feud:<br/><em>Just Us</em></h1><p className="ff-lede">How well can you guess the popular answers?</p>
         <div className="ff-setup-facts"><span><b>{game.totalQuestions}</b> questions in the bank</span><span><b>{game.totalRounds}</b> rounds selected</span></div>
         <div className="ff-rules"><b>How to play</b><p>You both get the same question and 15 seconds to lock in one answer. Then your answers and the survey board appear together. Either of you can match tricky wording and adjust points after the reveal.</p></div>
-        <button className="ff-primary" disabled={!isHost} onClick={() => socket.emit('familyfeud:start')}>{isHost ? 'Start game' : 'Waiting for host to start'} <span>→</span></button>
+        <button className="ff-primary" disabled={!isHost} onClick={() => { void unlock(); socket.emit('familyfeud:start'); }}>{isHost ? 'Start game' : 'Waiting for host to start'} <span>→</span></button>
       </main> : game.phase === 'answering' ? <main className="ff-panel ff-question-panel">
         <div className="ff-roundline"><span>ROUND {game.round} / {game.totalRounds}</span><span>{game.submissions[otherId]?.submitted ? `${names(otherId)} locked in` : `Waiting on ${names(otherId)}`}</span></div>
         <div className={`ff-clock ${seconds <= 5 ? 'urgent' : ''}`} aria-label={`${seconds} seconds remaining`}><i style={{ '--timer-angle': `${(15 - seconds) * 24}deg` } as React.CSSProperties}/><b>{seconds}</b><small>SEC</small></div>
         <p className="ff-kicker">WE ASKED THE ROOM…</p><h1 className="ff-question">{game.question}</h1>
-        {!submitted ? <form className="ff-answer-form" onSubmit={event => { event.preventDefault(); socket.emit('familyfeud:submit', { answer }); }}><label htmlFor="ff-answer">YOUR ANSWER</label><input id="ff-answer" autoComplete="off" maxLength={120} value={answer} onChange={event => setAnswer(event.target.value)} placeholder="What comes to mind?" disabled={game.paused || seconds === 0}/><button className="ff-primary" disabled={!answer.trim() || game.paused || seconds === 0}>Lock in answer <span>→</span></button></form> : <div className="ff-locked"><span>✓</span><div><b>Answer locked!</b><small>Waiting for your person…</small></div></div>}
+        {!submitted ? <form className="ff-answer-form" onSubmit={event => { event.preventDefault(); void unlock(); socket.emit('familyfeud:submit', { answer }); }}><label htmlFor="ff-answer">YOUR ANSWER</label><input id="ff-answer" autoComplete="off" maxLength={120} value={answer} onFocus={() => { void unlock(); }} onChange={event => setAnswer(event.target.value)} placeholder="What comes to mind?" disabled={game.paused || seconds === 0}/><button className="ff-primary" disabled={!answer.trim() || game.paused || seconds === 0}>Lock in answer <span>→</span></button></form> : <div className="ff-locked"><span>✓</span><div><b>Answer locked!</b><small>Waiting for your person…</small></div></div>}
         {game.paused && <div className="ff-away">Your person is reconnecting. The shared timer keeps running.</div>}
       </main> : revealed && <main className="ff-panel ff-reveal-panel">
         <div className="ff-roundline"><span>{game.phase === 'matchOver' ? 'FINAL ROUND' : `ROUND ${game.round} REVEAL`}</span><span>{game.phase === 'matchOver' ? 'THAT’S A WRAP' : 'THE BOARD IS YOURS'}</span></div>

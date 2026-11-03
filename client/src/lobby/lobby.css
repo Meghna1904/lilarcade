@@ -17,3 +17,10 @@ html[data-motion="reduced"] .ticket-peek,html[data-motion="reduced"] .scoreboard
 .ticket-play:disabled{filter:saturate(.55);box-shadow:0 2px 0 #796b79;opacity:.62}.lobby-connection-note{margin:0 auto 8px;padding:7px 12px;border:1px solid #ffd98a44;border-radius:10px;background:#2b2640aa;color:#ffe3aa;text-align:center;font-size:11px}
 .scoreboard-columns .doodle-wrap{width:56px;height:56px;aspect-ratio:1}
 .scoreboard-columns .doodle-wrap{width:56px;height:56px;aspect-ratio:1}
+
+/* Keep ticket proportions stable across short and tall browser windows. */
+.game-tickets{grid-auto-rows:260px}
+.ticket-info .ticket-tag,.ticket-info h3,.ticket-info>p,.ticket-info .ticket-chips,.ticket-info .ticket-actions{flex-shrink:0}
+.ticket-info h3{display:block;min-height:1.05em;color:var(--text)}
+@media(max-width:1099px){.game-tickets{grid-auto-rows:260px}}
+@media(max-width:639px){.game-tickets{grid-auto-rows:clamp(205px,58vw,248px)}}
