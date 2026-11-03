@@ -1,4 +1,4 @@
-export type GameId = 'hangman' | 'cups' | 'poison' | 'cloud' | 'slapcount';
+export type GameId = 'hangman' | 'cups' | 'poison' | 'cloud' | 'slapcount' | 'familyfeud';
 export { REACTIONS, isReactionId } from './reactions.js';
 export type { ReactionId } from './reactions.js';
 export type MatchFormat = 'quick' | 'bestOf3' | 'bestOf5';
@@ -76,6 +76,17 @@ export type SlapView = {
   roundWinner?: string; matchWinner?: string; draw?: boolean; paused: boolean; remainingMs?: number;
   lastReaction?: { player: string; emoji: string; at: number };
 };
+export type FamilyFeudPhase = 'setup' | 'answering' | 'reveal' | 'matchOver';
+export type FamilyFeudView = {
+  game: 'familyfeud'; phase: FamilyFeudPhase; host: string; players: [string, string]; round: number; totalRounds: number;
+  totalQuestions: number; question?: string; startedAt?: number; deadline?: number; paused: boolean;
+  serverNow: number;
+  submissions: Record<string, { submitted: boolean; answer?: string | null }>;
+  scores: Record<string, number>; roundScores: Record<string, number>; board?: Array<{ text: string; points: number }>;
+  results?: Record<string, { answer: string | null; matchIndex: number | null; suggestedIndex: number | null; points: number; originalPoints: number; adjustments: Array<{ actor: string; from: number | null; to: number | null; points: number; at: number }> }>;
+  history: Array<{ question: string; scores: Record<string, number>; answers: Record<string, string | null>; matched: Record<string, boolean> }>;
+  lastReaction?: { player: string; emoji: string; at: number };
+};
 export type PoisonMove =
   | { type: 'poison:pickTile'; tile: number }
   | { type: 'poison:lockPick' }
@@ -96,13 +107,17 @@ export type SlapMove =
   | { type: 'slap:nextRound' }
   | { type: 'slap:backToLobby' };
 export type RoomView = {
-  self: string; players: PlayerSummary[]; status: string; game: HangmanView | CupsView | PoisonView | CloudView | SlapView | null;
+  self: string; players: PlayerSummary[]; status: string; game: HangmanView | CupsView | PoisonView | CloudView | SlapView | FamilyFeudView | null;
   scoreboard: Scoreboard; sameSweetMoments: number; error?: string;
 };
 export type ClientToServerEvents = {
   enter: (payload: { name: string; passcode: string; token: string; timezone?: string; doodleId?: string; shareSky?: boolean }) => void;
   'doodle:select': (payload: { doodleId: string }) => void;
-  startGame: (payload: { game: GameId; format: MatchFormat; cups?: Omit<CupsSettings, 'format'>; poison?: Omit<PoisonSettings, 'format'>; cloud?: CloudSettings; slapCount?: SlapSettings }) => void;
+  startGame: (payload: { game: GameId; format: MatchFormat; cups?: Omit<CupsSettings, 'format'>; poison?: Omit<PoisonSettings, 'format'>; cloud?: CloudSettings; slapCount?: SlapSettings; familyFeud?: { rounds: number } }) => void;
+  'familyfeud:start': () => void;
+  'familyfeud:submit': (payload: { answer: string }) => void;
+  'familyfeud:score': (payload: { target: string; matchIndex: number | null; points: number }) => void;
+  'familyfeud:next': () => void;
   'slap:layCard': () => void;
   'slap:slap': (payload: { cardId: number }, ack?: (result: 'pending' | 'ignored' | 'wrong' | 'rejected') => void) => void;
   'slap:ping': (payload: { pingId: number; clientTime: number }) => void;

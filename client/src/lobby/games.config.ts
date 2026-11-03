@@ -1,7 +1,7 @@
 import type { ComponentType } from 'react';
 import { TicketIllustration } from './TicketIllustration';
 
-export type LobbyGameId = 'hangman'|'cups'|'poison'|'cloud'|'slapcount';
+export type LobbyGameId = 'hangman'|'cups'|'poison'|'cloud'|'slapcount'|'familyfeud';
 export type SettingOption = { label: string; value: string|number|boolean };
 export type GameSetting = { id: string; label: string; type: 'select'|'checkbox'; default: string|number|boolean; options?: SettingOption[] };
 export type GameTicketConfig = { id: LobbyGameId; title: string; tagline: string; description: string; accent: string; formats: Array<'quick'|'bestOf3'|'bestOf5'>; settings: GameSetting[]; image?: string; art: ComponentType<{ className?: string }> };
@@ -37,6 +37,9 @@ export const gameRegistry: GameTicketConfig[] = [
     { id: 'startingCards', label: 'Starting cards', type: 'select', default: 20, options: options(Array.from({ length: 11 }, (_, i) => i + 10)) },
     { id: 'pace', label: 'Turn pace', type: 'select', default: 'manual', options: [{ label: 'Manual lay', value: 'manual' }, { label: 'Auto · 1.2 sec', value: 1200 }, { label: 'Auto · 1 sec', value: 1000 }, { label: 'Auto · 0.8 sec', value: 800 }] },
     { id: 'callMode', label: 'Call mode · hide count', type: 'checkbox', default: false },
+  ], art: TicketIllustration },
+  { id: 'familyfeud', title: 'Family Feud', tagline: 'POPULAR ANSWERS · 2 PLAYERS', description: 'How well can you guess the popular answers?', accent: 'var(--peach)', formats: ['quick'], settings: [
+    { id: 'rounds', label: 'Questions', type: 'select', default: 10, options: options([5,10,15,20,30], value => `${value} rounds`) },
   ], art: TicketIllustration },
 ];
 

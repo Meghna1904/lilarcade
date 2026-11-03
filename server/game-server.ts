@@ -7,7 +7,7 @@ import { Server } from 'socket.io';
 import type { ClientToServerEvents, ServerToClientEvents } from '@arcade/shared';
 import type { CloudMove } from '@arcade/shared';
 import type { SlapMove } from '@arcade/shared';
-import { backToLobby, cloudMove, cupsGuess, cupsHint, cupsLock, cupsReact, disconnect, enterRoom, lobbyView, makeGuess, nextCloudRound, nextHangman, nextSlapRound, playerFor, poisonForcedLoss, poisonLock, poisonPick, poisonReact, poisonTap, poisonTimeout, nextPoisonRound, reaction, roomForSocket, setHangman, slapCompleteResolve, slapMove, slapResolveWindow, slapStartPlaying, startGame, markSlapCardVisible, updatePlayerDoodle } from './rooms.js';
+import { backToLobby, cloudMove, cupsGuess, cupsHint, cupsLock, cupsReact, disconnect, enterRoom, lobbyView, makeGuess, nextCloudRound, nextHangman, nextSlapRound, playerFor, poisonForcedLoss, poisonLock, poisonPick, poisonReact, poisonTap, poisonTimeout, nextPoisonRound, reaction, roomForSocket, setHangman, slapCompleteResolve, slapMove, slapResolveWindow, slapStartPlaying, startGame, markSlapCardVisible, updatePlayerDoodle, familyFeudStart, familyFeudSubmit, familyFeudScore, familyFeudNext, familyFeudTimeout } from './rooms.js';
 import { checkForcedLoss, legalTiles } from './games/poison.js';
 import { clearLockout, completeSwap, pauseTimers, resumeTimers, timeoutCall, timeoutHunt, type CloudGame } from './games/cloud.js';
 import { completeResolve, pauseTimers as pauseSlapTimers, recordOneWayLatency, resumeTimers as resumeSlapTimers, type SlapCountGame } from './games/slapcount.js';
@@ -47,6 +47,18 @@ const cloudPublishTimes = new Map<string, number>();
 const cloudPublishTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const slapTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const pendingSlapPings = new Map<string, Map<number, number>>();
+const familyFeudTimers = new Map<string, ReturnType<typeof setTimeout>>();
+function scheduleFamilyFeudTimer(room: NonNullable<ReturnType<typeof roomForSocket>>) {
+  const previous = familyFeudTimers.get(room.key); if (previous) clearTimeout(previous); familyFeudTimers.delete(room.key);
+  const game = room.game;
+  if (!game || !('familyFeud' in game) || game.phase !== 'answering') return;
+  const deadline = game.deadline;
+  familyFeudTimers.set(room.key, setTimeout(() => {
+    familyFeudTimers.delete(room.key);
+    if (room.game !== game || game.phase !== 'answering' || game.deadline !== deadline) return;
+    if (familyFeudTimeout(room)) publish(room);
+  }, Math.max(0, deadline - Date.now())));
+}
 function schedulePoisonTimer(room: NonNullable<ReturnType<typeof roomForSocket>>) {
   const old = poisonTimers.get(room.key);
   if (old) clearTimeout(old);
@@ -219,6 +231,7 @@ io.on('connection', socket => {
     schedulePoisonTimer(result.room);
     scheduleCloudTimer(result.room);
     scheduleSlapTimer(result.room);
+    scheduleFamilyFeudTimer(result.room);
     publish(result.room);
   });
 
@@ -237,6 +250,7 @@ io.on('connection', socket => {
     schedulePoisonTimer(room);
     scheduleCloudTimer(room);
     scheduleSlapTimer(room);
+    scheduleFamilyFeudTimer(room);
     publish(room);
     if (error) socket.emit('actionError', error);
     ack?.(error ?? null);
@@ -249,7 +263,11 @@ io.on('connection', socket => {
     handleCloud(room, player.id, move, ack);
   };
 
-  socket.on('startGame', ({ game, format, cups, poison, cloud, slapCount }) => action((r, p) => startGame(r, p, game, format, cups, poison, cloud, slapCount)));
+  socket.on('startGame', ({ game, format, cups, poison, cloud, slapCount, familyFeud }) => action((r, p) => startGame(r, p, game, format, cups, poison, cloud, slapCount, familyFeud)));
+  socket.on('familyfeud:start', () => action((r, p) => familyFeudStart(r, p)));
+  socket.on('familyfeud:submit', ({ answer }) => action((r, p) => familyFeudSubmit(r, p, answer)));
+  socket.on('familyfeud:score', ({ target, matchIndex, points }) => action((r, p) => familyFeudScore(r, p, target, matchIndex, points)));
+  socket.on('familyfeud:next', () => action((r, p) => familyFeudNext(r, p)));
   socket.on('setHangmanWord', ({ word, hint }) => action((r, p) => setHangman(r, p, word, hint)));
   socket.on('guessLetter', ({ letter }) => action((r, p) => makeGuess(r, p, letter)));
   socket.on('hangmanReaction', ({ emoji }) => action((r, p) => reaction(r, p, emoji)));
@@ -311,7 +329,7 @@ io.on('connection', socket => {
   socket.on('disconnect', () => {
     pendingSlapPings.delete(socket.id);
     const room = disconnect(socket.id);
-    if (room) { schedulePoisonTimer(room); scheduleCloudTimer(room); scheduleSlapTimer(room); publish(room); }
+    if (room) { schedulePoisonTimer(room); scheduleCloudTimer(room); scheduleSlapTimer(room); scheduleFamilyFeudTimer(room); publish(room); }
   });
 });
 

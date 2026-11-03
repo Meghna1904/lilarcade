@@ -8,8 +8,9 @@ import { createCups, getViewFor as cupsViewFor, lockSecret, reaction as cupsReac
 import { checkForcedLoss, createPoison, getViewFor as poisonViewFor, lockPick, pickTile, react as poisonReaction, resolveForcedLoss, tapTile, timeoutTurn, validPoisonSettings, type PoisonGame } from './games/poison.js';
 import { createCloudGame, getViewFor as cloudViewFor, handleMove as handleCloudMove, type CloudGame } from './games/cloud.js';
 import { completeResolve, createGame as createSlapCount, getViewFor as slapViewFor, handleMove as handleSlapMove, markCardVisible, resolveWindow, startPlaying, type SlapCountGame } from './games/slapcount.js';
+import { createFamilyFeud, familyFeudView, nextFamilyFeud as advanceFamilyFeud, scoreFamilyFeud as editFamilyFeudScore, startFamilyFeud as beginFamilyFeud, submitFamilyFeud as submitFeudAnswer, timeoutFamilyFeud, type FamilyFeudGame } from './games/family-feud.js';
 type Player = { id: string; name: string; online: boolean; socketId: string; timezone?: string; doodleId?: string };
-type Game = HangmanGame | CupsGame | PoisonGame | CloudGame | SlapCountGame;
+type Game = HangmanGame | CupsGame | PoisonGame | CloudGame | SlapCountGame | FamilyFeudGame;
 type Room = { key: string; players: Player[]; game: Game | null; scoreboard: Scoreboard; sameSweetMoments: number };
 const rooms = new Map<string, Room>();
 function manifestDoodleIds() {
@@ -27,7 +28,7 @@ function validTimezone(value: unknown): value is string {
 function validDoodleId(value: unknown): value is string {
   return typeof value === 'string' && value.length <= 40 && manifestDoodleIds().has(value);
 }
-const emptyScore = (): Scoreboard => ({ hangman: {}, cups: {}, poison: {}, cloud: {}, slapcount: {} });
+const emptyScore = (): Scoreboard => ({ hangman: {}, cups: {}, poison: {}, cloud: {}, slapcount: {}, familyfeud: {} });
 export const hashPasscode = (passcode: string) => {
   const pepper = process.env.ARCADE_PASSCODE_PEPPER;
   return pepper
@@ -66,10 +67,10 @@ export function updatePlayerDoodle(room: Room, playerId: string, doodleId: unkno
 export function lobbyView(room: Room, self: string, error?: string): RoomView {
   const players = room.players.map(({ id, name, online, timezone, doodleId }) => ({ id, name, online, ...(timezone ? { timezone } : {}), ...(doodleId ? { doodleId } : {}) }));
   const other = room.players.find(p => p.id !== self);
-  const gameView = room.game ? 'slapCount' in room.game ? slapViewFor(room.game, self) : 'cloudGame' in room.game ? cloudViewFor(room.game, self) : 'poisonA' in room.game ? poisonViewFor(room.game, self) : 'cups' in room.game ? cupsViewFor(room.game, self) : viewFor(room.game, self) : null;
+  const gameView = room.game ? 'familyFeud' in room.game ? familyFeudView(room.game, self) : 'slapCount' in room.game ? slapViewFor(room.game, self) : 'cloudGame' in room.game ? cloudViewFor(room.game, self) : 'poisonA' in room.game ? poisonViewFor(room.game, self) : 'cups' in room.game ? cupsViewFor(room.game, self) : viewFor(room.game, self) : null;
   return { self, players, status: !other ? 'Waiting for your person…' : other.online ? `${other.name} is here 💗` : `${other.name} disconnected, waiting for them to come back`, game: gameView, scoreboard: room.scoreboard, sameSweetMoments: room.sameSweetMoments, ...(error ? { error } : {}) };
 }
-export function startGame(room: Room, player: string, game: GameId, format: MatchFormat, cups?: Omit<CupsSettings, 'format'>, poison?: Omit<PoisonSettings, 'format'>, cloud?: CloudSettings, slapCount?: SlapSettings) {
+export function startGame(room: Room, player: string, game: GameId, format: MatchFormat, cups?: Omit<CupsSettings, 'format'>, poison?: Omit<PoisonSettings, 'format'>, cloud?: CloudSettings, slapCount?: SlapSettings, familyFeud?: { rounds: number }) {
   if (room.players.length !== 2 || room.players.some(p => !p.online)) return 'Wait until both of you are here.';
   if (room.game && room.game.phase !== 'matchOver') return 'A game is already in progress.';
   const other = room.players.find(p => p.id !== player)!.id;
@@ -101,9 +102,35 @@ export function startGame(room: Room, player: string, game: GameId, format: Matc
     if (!validSlapSettings(settings)) return 'Choose valid Slap Count settings.';
     room.game = createSlapCount(player, other, player, format, settings);
   }
+  else if (game === 'familyfeud') {
+    const rounds = familyFeud?.rounds ?? 10;
+    if (!Number.isInteger(rounds) || rounds < 1 || rounds > 30) return 'Choose between 1 and 30 rounds.';
+    room.game = createFamilyFeud(player, other, rounds);
+  }
   else return 'That game is coming soon.';
   return null;
 }
+
+export function familyFeudStart(room: Room, player: string) { return room.game && 'familyFeud' in room.game ? beginFamilyFeud(room.game, player) : 'Start Family Feud first.'; }
+function syncFamilyFeudWinner(room: Room, game: FamilyFeudGame) {
+  if (game.phase !== 'matchOver') return;
+  const [first, second] = game.players;
+  const winner = game.scores[first] === game.scores[second] ? undefined : game.scores[first] > game.scores[second] ? first : second;
+  if (game.recordedWinner === winner) return;
+  if (game.recordedWinner) room.scoreboard.familyfeud[game.recordedWinner] = Math.max(0, (room.scoreboard.familyfeud[game.recordedWinner] ?? 0) - 1);
+  if (winner) room.scoreboard.familyfeud[winner] = (room.scoreboard.familyfeud[winner] ?? 0) + 1;
+  game.recordedWinner = winner;
+}
+export function familyFeudSubmit(room: Room, player: string, answer: string, now = Date.now()) {
+  const game = room.game;
+  if (!game || !('familyFeud' in game)) return 'Start Family Feud first.';
+  const error = submitFeudAnswer(game, player, answer, now);
+  syncFamilyFeudWinner(room, game);
+  return error;
+}
+export function familyFeudTimeout(room: Room, now = Date.now()) { if (!room.game || !('familyFeud' in room.game)) return false; const timedOut = timeoutFamilyFeud(room.game, now); syncFamilyFeudWinner(room, room.game); return timedOut; }
+export function familyFeudScore(room: Room, player: string, target: string, matchIndex: number | null, points: number) { if (!room.game || !('familyFeud' in room.game)) return 'Start Family Feud first.'; const error = editFamilyFeudScore(room.game, player, target, matchIndex, points); syncFamilyFeudWinner(room, room.game); return error; }
+export function familyFeudNext(room: Room, player: string) { return room.game && 'familyFeud' in room.game ? advanceFamilyFeud(room.game, player) : 'Start Family Feud first.'; }
 
 export function validSlapSettings(settings: SlapSettings) {
   return Number.isInteger(settings.startingCards) && settings.startingCards >= 10 && settings.startingCards <= 20 &&
@@ -274,6 +301,7 @@ export function nextPoisonRound(room: Room, player: string) {
 export function nextHangman(room: Room, player: string) {
   const g = room.game;
   if (!g || (g.phase !== 'roundOver' && g.phase !== 'matchOver')) return 'This round is still in progress.';
+  if ('familyFeud' in g) return 'Family Feud rounds are advanced by the host.';
   if ('slapCount' in g) return nextSlapRound(room, player);
   if ('poisonA' in g) return nextPoisonRound(room, player);
   if ('cloudGame' in g) return nextCloudRound(room, player);
