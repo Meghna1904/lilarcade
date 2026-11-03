@@ -1,24 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Lottie from 'lottie-react';
-import { isReactionId, REACTIONS, type ReactionId } from '@arcade/shared';
+import { isReactionId, REACTIONS } from '@arcade/shared';
 import './reactions.css';
 
 type ReactionEvent = { player: string; emoji: string; at: number };
-type Floating = { key: string; player: string; id?: ReactionId; left: number; top: number; fallback: string; file?: string; reduced: boolean };
-const jsonCache = new Map<string, Promise<object>>();
-
-function loadAnimation(file: string): Promise<object> {
-  let cached = jsonCache.get(file);
-  if (!cached) {
-    cached = fetch(`/emoji/${file}`).then(response => {
-      if (!response.ok) throw new Error(`Could not load reaction animation ${file}`);
-      return response.json() as Promise<object>;
-    });
-    jsonCache.set(file, cached);
-    cached.catch(() => jsonCache.delete(file));
-  }
-  return cached;
-}
+type Floating = { key: string; player: string; left: number; top: number; emoji: string; reduced: boolean };
 
 function findAnchor(player: string, self?: string): { left: number; top: number } {
   const anchor = [...document.querySelectorAll<HTMLElement>('[data-reaction-player]')]
@@ -43,11 +28,10 @@ export function FloatingReactions({ reaction, self }: { reaction?: ReactionEvent
     const key = `${reaction.player}-${reaction.at}-${reaction.emoji}`;
     if (seen.current === key) return;
     seen.current = key;
-    const validId = isReactionId(reaction.emoji);
-    const item = validId ? REACTIONS.find(entry => entry.id === reaction.emoji) : undefined;
+    const item = isReactionId(reaction.emoji) ? REACTIONS.find(entry => entry.id === reaction.emoji) : undefined;
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const position = findAnchor(reaction.player, self);
-    setFloating(current => [...current, { key, player: reaction.player, id: item?.id, ...position, fallback: item?.fallback ?? '🙂', file: item?.file, reduced }].slice(-5));
+    setFloating(current => [...current, { key, player: reaction.player, ...position, emoji: item?.fallback ?? '🙂', reduced }].slice(-5));
   }, [reaction?.at, reaction?.emoji, reaction?.player, self]);
 
   return <div className="floating-reaction-layer" aria-live="off" aria-hidden="true">
@@ -56,28 +40,12 @@ export function FloatingReactions({ reaction, self }: { reaction?: ReactionEvent
 }
 
 function ReactionFloat({ item, onDone }: { item: Floating; onDone: (key: string) => void }) {
-  const [animation, setAnimation] = useState<object>();
-  const [status, setStatus] = useState<'loading' | 'ready' | 'fallback'>(item.reduced || !item.file ? 'fallback' : 'loading');
   useEffect(() => {
-    if (status === 'loading') return;
     const timer = window.setTimeout(() => onDone(item.key), 1_500);
     return () => window.clearTimeout(timer);
-  }, [item.key, onDone, status]);
-  useEffect(() => {
-    if (status !== 'loading' || !item.file) return;
-    let active = true;
-    const timer = window.setTimeout(() => { if (active) setStatus('fallback'); }, 1_000);
-    loadAnimation(item.file).then(value => {
-      if (active && status === 'loading') setAnimation(value);
-    }).catch(() => { if (active) setStatus('fallback'); });
-    return () => { active = false; window.clearTimeout(timer); };
-  }, [item.file, status]);
+  }, [item.key, onDone]);
 
-  const showFallback = status === 'fallback' || item.reduced || !animation;
-
-  return <span className={`floating-reaction floating-reaction-${status}${item.reduced ? ' reduced' : ''}`} style={{ left: item.left, top: item.top }}>
-    {showFallback
-      ? <span className="floating-reaction-fallback">{item.fallback}</span>
-      : <Lottie animationData={animation as never} loop={false} autoplay renderer="svg" className="floating-reaction-lottie" onDOMLoaded={() => setStatus('ready')} onDataFailed={() => setStatus('fallback')} />}
+  return <span className={`floating-reaction${item.reduced ? ' reduced' : ''}`} style={{ left: item.left, top: item.top }}>
+    <span className="floating-reaction-emoji">{item.emoji}</span>
   </span>;
 }
