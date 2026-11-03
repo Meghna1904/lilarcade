@@ -170,3 +170,15 @@
   .hangman-board{min-height:440px;padding:clamp(12px,4vw,18px)}
   .hangman-field>span{min-width:0}
 }
+@media(max-width:999px){
+  .hangman-app-shell{height:auto;min-height:100svh;overflow:visible;display:block}
+  .hangman-screen{height:auto;min-height:100svh;grid-template-rows:auto auto}
+  .hangman-zones{grid-template-rows:auto auto auto}
+}
+@media(max-width:520px){
+  .hangman-play .keyboard{gap:6px}
+  .keyboard-row{flex-wrap:wrap;gap:5px}
+  .hangman-play .key{width:44px;min-width:44px;min-height:48px;height:48px;flex:0 1 44px;max-width:44px}
+}
+.hangman-help-modal{max-height:calc(100dvh - 32px);overflow-y:auto}
+.hangman-modal-close{width:44px;height:44px;touch-action:manipulation}

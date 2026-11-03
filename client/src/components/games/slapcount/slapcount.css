@@ -17,3 +17,11 @@
 .slap-doodle-character .doodle-image{-webkit-mask-image:linear-gradient(to bottom,#000 0 94%,transparent 100%);mask-image:linear-gradient(to bottom,#000 0 94%,transparent 100%)}
 .slap-doodle-character .doodle-wrap.is-portrait{width:clamp(150px,17vh,240px)}
 @media(max-width:650px){.slap-doodle-character .doodle-wrap.is-portrait{width:56px}}
+@media(max-width:650px){
+  .slap-app-shell{padding-bottom:max(env(safe-area-inset-bottom),4px)}
+  .slap-header-back,.slap-icon-button,.slap-sound-toggle{min-height:44px;height:44px}
+  .slap-header-back{min-width:44px}
+  .slap-icon-button{width:44px}
+  .slap-sound-toggle{width:44px;min-width:44px;padding:0}
+  .slap-reactions .reaction-bar button{min-width:40px;min-height:40px}
+}

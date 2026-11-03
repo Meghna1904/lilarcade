@@ -88,3 +88,23 @@
 @keyframes cups-pip-pop{from{transform:scale(.65)}to{transform:scale(1)}}
 @media(prefers-reduced-motion:reduce){.cups-round-pips i.filled{animation:none}.cup-slot,.cup{transition:opacity .12s ease}}
 .cups-arranger-watching{display:flex;align-items:center;justify-content:center;gap:9px;min-height:84px;margin:18px auto;padding:15px;color:#c0b3ca;font:500 15px var(--display)}.cups-arranger-watching>span{color:var(--butter);font-size:22px;letter-spacing:3px}
+@media(max-width:760px){
+  .cups-app-shell{height:auto;min-height:100svh;overflow:visible;display:block;padding:env(safe-area-inset-top) max(env(safe-area-inset-right),12px) env(safe-area-inset-bottom) max(env(safe-area-inset-left),12px)}
+  .cups-screen{height:auto;min-height:100svh;grid-template-rows:auto auto}
+  .cups-topbar{min-height:56px;height:auto;grid-template-columns:auto minmax(0,1fr) auto;gap:5px;padding:4px 0}
+  .cups-back,.cups-icon-button{min-height:44px}.cups-icon-button{width:44px;min-width:44px}
+  .cups-title{gap:5px;font-size:clamp(14px,4vw,18px)}.cups-title svg{width:18px;height:18px}.cups-title small{font-size:7px}
+  .cups-topbar-right{gap:4px}.cups-round-pips{gap:4px;margin-right:1px}.cups-round-pips i{width:7px;height:7px}
+  .cups-layout{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;grid-template-areas:'partner' 'board' 'me';gap:8px;min-height:0;padding:10px 0 20px}
+  .cups-player-rail{min-width:0;min-height:50px;flex-direction:row;justify-content:flex-start;gap:8px;padding:3px 6px;text-align:left}
+  .cups-player-rail.right{grid-area:partner}.cups-player-rail.left{grid-area:me}
+  .cups-player-rail .doodle-wrap{width:44px!important;height:44px!important;flex:none}
+  .cups-rail-ledge{display:none}.cups-player-name{margin:0;flex:1;font-size:14px}.cups-role-badge{margin:0;font-size:8px}.cups-rail-wins{margin:0}
+  .cups-board{grid-area:board;min-height:clamp(570px,78svh,820px);height:auto;align-self:stretch}
+  .cups-board-inner{height:auto;min-height:100%;overflow:visible;justify-content:flex-start;padding:clamp(14px,4vw,22px)}
+  .cups-stage,.cups-guessing-stage{min-height:0;overflow:visible}
+  .cups-primary,.wide-action{min-height:52px}.hint-choices button{min-height:44px;padding-inline:11px}
+}
+.cups-help-backdrop{padding:max(env(safe-area-inset-top),12px) max(env(safe-area-inset-right),12px) max(env(safe-area-inset-bottom),12px) max(env(safe-area-inset-left),12px);overflow-y:auto}
+.cups-help-modal{max-height:calc(100dvh - 24px);overflow-y:auto}
+.cups-help-close{width:44px;height:44px;touch-action:manipulation}
