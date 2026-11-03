@@ -1,10 +1,10 @@
 import type { ComponentType } from 'react';
 import { TicketIllustration } from './TicketIllustration';
 
-export type LobbyGameId = 'hangman'|'cups'|'poison'|'cloud'|'slapcount'|'familyfeud';
+export type LobbyGameId = 'hangman'|'cups'|'poison'|'cloud'|'slapcount'|'familyfeud'|'rps'|'hotbomb';
 export type SettingOption = { label: string; value: string|number|boolean };
 export type GameSetting = { id: string; label: string; type: 'select'|'checkbox'; default: string|number|boolean; options?: SettingOption[] };
-export type GameTicketConfig = { id: LobbyGameId; title: string; tagline: string; description: string; accent: string; formats: Array<'quick'|'bestOf3'|'bestOf5'>; settings: GameSetting[]; image?: string; art: ComponentType<{ className?: string }> };
+export type GameTicketConfig = { id: LobbyGameId; title: string; tagline: string; description: string; accent: string; formats: Array<'quick'|'bestOf3'|'bestOf5'>; settings: GameSetting[]; image?: string; duration?: string; art: ComponentType<{ className?: string }> };
 const options = (values: Array<string|number>, label: (value: string|number) => string = value => String(value)): SettingOption[] => values.map(value => ({ label: label(value), value }));
 
 export const lobbyCopy = {
@@ -41,6 +41,8 @@ export const gameRegistry: GameTicketConfig[] = [
   { id: 'familyfeud', title: 'Family Feud', tagline: 'POPULAR ANSWERS · 2 PLAYERS', description: 'How well can you guess the popular answers?', accent: 'var(--peach)', formats: ['quick'], settings: [
     { id: 'rounds', label: 'Questions', type: 'select', default: 10, options: options([5,10,15,20,30], value => `${value} rounds`) },
   ], art: TicketIllustration },
+  { id: 'hotbomb', title: 'Hot Bomb', tagline: 'A LITTLE BLUFF - 2 PLAYERS', description: 'Pass it fast or hold your nerve. The fuse is secret.', accent: 'var(--peach)', formats: ['quick','bestOf3','bestOf5'], settings: [], duration: '~3 min', art: TicketIllustration },
+  { id: 'rps', title: 'Rock Paper Scissors', tagline: 'SILLY SHOWDOWN · 2 PLAYERS', description: 'Pick your move, reveal together, and race to three wins.', accent: 'var(--mint)', formats: ['bestOf5'], settings: [], art: TicketIllustration },
 ];
 
 export function defaultSettings(config: GameTicketConfig) { return Object.fromEntries(config.settings.map(setting => [setting.id, setting.default])); }

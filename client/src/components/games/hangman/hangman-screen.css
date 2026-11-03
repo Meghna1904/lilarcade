@@ -111,3 +111,62 @@
 .hangman-modal-backdrop{background:#100d1bd9}.hangman-help-modal{border-color:#bfa9e855;background:linear-gradient(145deg,#342d49,#282339);box-shadow:0 0 0 5px #bfa9e80e,0 24px 70px #100d1b}
 @media(max-width:999px){.hangman-board-heading{top:8px;left:14px;right:14px;font-size:7px}.hangman-board-heading small{font-size:7px}.hangman-rail:before{display:none}.hangman-rail-left{border-top:1px solid #bfa9e820}.hangman-rail-right{border-bottom:1px solid #bfa9e820}}
 @media(prefers-reduced-motion:reduce){.hangman-back,.hangman-icon-button,.hangman-play .key{transition:none}.hangman-play .key:hover:not(:disabled){transform:none}}
+
+/* Responsive game surface: use content height and reserve side rails for wide screens. */
+.hangman-app-shell{
+  display:block;
+  height:auto;
+  min-height:100dvh;
+  overflow:visible;
+  padding:env(safe-area-inset-top) max(env(safe-area-inset-right),var(--game-shell-inset)) env(safe-area-inset-bottom) max(env(safe-area-inset-left),var(--game-shell-inset));
+}
+.hangman-screen{
+  height:auto;
+  min-height:100dvh;
+  grid-template-rows:auto auto;
+  padding-top:0;
+}
+.hangman-topbar{height:auto;min-height:52px;grid-template-columns:auto minmax(0,1fr) auto}
+.hangman-zones{
+  min-height:0;
+  grid-template-columns:minmax(0,1fr);
+  grid-template-rows:auto auto auto;
+  grid-template-areas:'partner' 'board' 'me';
+  align-items:stretch;
+  gap:var(--game-layout-gap);
+  padding:clamp(8px,1.5vw,16px) 0 clamp(16px,3vw,30px);
+}
+.hangman-rail{min-width:0;min-height:54px;max-height:none;flex-direction:row;justify-content:flex-start;gap:10px;padding:4px 8px}
+.hangman-rail-right{grid-area:partner}
+.hangman-rail-left{grid-area:me;justify-content:flex-end}
+.hangman-rail .doodle-wrap{width:48px!important;height:48px!important;flex:none}
+.hangman-rail .doodle-image{width:100%;height:100%;object-fit:contain}
+.hangman-ledge{display:none}
+.hangman-rail strong{min-width:16ch;max-width:min(48vw,28ch);overflow-wrap:break-word}
+.hangman-board{grid-area:board;justify-self:center;align-self:stretch;width:100%;height:auto;min-height:clamp(440px,calc(100dvh - 120px),760px);max-width:var(--game-main-max);overflow:visible}
+.hangman-setup,.hangman-waiting,.hangman-watching,.hangman-play{min-width:0}
+.hangman-setup{width:min(100%,32.5rem)}
+.hangman-field label,.hangman-field input{min-width:0;max-width:100%}
+.hangman-field{flex-wrap:wrap}
+.hangman-field>span{white-space:normal;min-width:16ch}
+.hangman-preview{max-width:100%;overflow-x:auto;overflow-y:hidden}
+.hangman-play .keyboard{max-width:min(100%,38rem)}
+.hangman-play .key,.hangman-back,.hangman-icon-button{min-height:44px}
+@media(min-width:1200px){
+  .hangman-zones{grid-template-columns:minmax(var(--game-rail-min),.65fr) minmax(0,2.7fr) minmax(var(--game-rail-min),.65fr);grid-template-rows:minmax(0,1fr);grid-template-areas:'me board partner';align-items:stretch}
+  .hangman-rail{flex-direction:column;justify-content:center;min-height:0;padding:10px 0}
+  .hangman-rail-left,.hangman-rail-right{justify-content:center}
+  .hangman-rail strong{min-width:0;max-width:100%;overflow-wrap:anywhere}
+  .hangman-ledge{display:block}
+  .hangman-board{height:auto;min-height:clamp(500px,calc(100dvh - 130px),760px);max-width:60rem}
+}
+@media(max-width:560px){
+  .hangman-topbar{gap:6px}
+  .hangman-back,.hangman-icon-button{min-width:44px;height:44px}
+  .hangman-brand{font-size:clamp(14px,4vw,17px);gap:5px}
+  .hangman-top-actions{gap:4px}
+  .hangman-rail{gap:7px;padding-inline:4px}
+  .hangman-rail strong{min-width:0;max-width:24ch;font-size:14px}
+  .hangman-board{min-height:440px;padding:clamp(12px,4vw,18px)}
+  .hangman-field>span{min-width:0}
+}

@@ -1,4 +1,4 @@
-export type GameId = 'hangman' | 'cups' | 'poison' | 'cloud' | 'slapcount' | 'familyfeud';
+export type GameId = 'hangman' | 'cups' | 'poison' | 'cloud' | 'slapcount' | 'familyfeud' | 'rps' | 'hotbomb';
 export { REACTIONS, isReactionId } from './reactions.js';
 export type { ReactionId } from './reactions.js';
 export type MatchFormat = 'quick' | 'bestOf3' | 'bestOf5';
@@ -87,6 +87,26 @@ export type FamilyFeudView = {
   history: Array<{ question: string; scores: Record<string, number>; answers: Record<string, string | null>; matched: Record<string, boolean> }>;
   lastReaction?: { player: string; emoji: string; at: number };
 };
+export type RpsChoice = 'rock' | 'paper' | 'scissors';
+export type RpsPhase = 'choosing' | 'reveal' | 'matchOver';
+export type RpsView = {
+  game: 'rps'; phase: RpsPhase; round: number; playerA: string; playerB: string;
+  wins: Record<string, number>; myChoice?: RpsChoice; opponentChosen: boolean;
+  choices?: Record<string, RpsChoice>; roundWinner?: string; matchWinner?: string;
+  draw: boolean; paused: boolean; lastReaction?: { player: string; emoji: string; at: number };
+};
+export type HotBombAction = 'pass' | 'dodge' | 'feint';
+export type HotBombFlightView = { id: number; from: string; to: string; startedAt: number; durationMs: number; reversed: boolean };
+export type HotBombView = {
+  game: 'hotbomb'; phase: 'countdown' | 'playing' | 'roundOver' | 'matchOver'; format: MatchFormat;
+  round: number; playerA: string; playerB: string; holder?: string; flight?: HotBombFlightView;
+  myDodges: number; myFeints: number; matchScore: Record<string, number>; countdownEndsAt?: number;
+  canPass: boolean; canFeint: boolean; canDodge: boolean; gripLocked: boolean;
+  fuseLengthMs?: number;
+  loser?: string; winner?: string; boomMode?: 'held' | 'pass' | 'bounce' | 'feint'; paused: boolean;
+  lastEvent?: { id: number; type: 'go' | 'launched' | 'dodge' | 'feintReversed' | 'boom'; player?: string; loser?: string; mode?: 'held' | 'pass' | 'bounce' | 'feint' };
+  lastReaction?: { player: string; emoji: string; at: number };
+};
 export type PoisonMove =
   | { type: 'poison:pickTile'; tile: number }
   | { type: 'poison:lockPick' }
@@ -107,13 +127,17 @@ export type SlapMove =
   | { type: 'slap:nextRound' }
   | { type: 'slap:backToLobby' };
 export type RoomView = {
-  self: string; players: PlayerSummary[]; status: string; game: HangmanView | CupsView | PoisonView | CloudView | SlapView | FamilyFeudView | null;
+  self: string; players: PlayerSummary[]; status: string; game: HangmanView | CupsView | PoisonView | CloudView | SlapView | FamilyFeudView | RpsView | HotBombView | null;
   scoreboard: Scoreboard; sameSweetMoments: number; error?: string;
 };
 export type ClientToServerEvents = {
   enter: (payload: { name: string; passcode: string; token: string; timezone?: string; doodleId?: string; shareSky?: boolean }) => void;
   'doodle:select': (payload: { doodleId: string }) => void;
   startGame: (payload: { game: GameId; format: MatchFormat; cups?: Omit<CupsSettings, 'format'>; poison?: Omit<PoisonSettings, 'format'>; cloud?: CloudSettings; slapCount?: SlapSettings; familyFeud?: { rounds: number } }) => void;
+  'rps:choose': (payload: { choice: RpsChoice }) => void;
+  'rps:next': () => void;
+  'hotbomb:action': (payload: { action: HotBombAction }) => void;
+  'hotbomb:next': () => void;
   'familyfeud:start': () => void;
   'familyfeud:submit': (payload: { answer: string }) => void;
   'familyfeud:score': (payload: { target: string; matchIndex: number | null; points: number }) => void;

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-export type CandySound = 'tap' | 'select' | 'safe' | 'poison' | 'lock' | 'reveal' | 'win' | 'lose' | 'aww' | 'cloudTick' | 'cloudWrong' | 'cloudFound' | 'cloudSwap' | 'cloudCall' | 'slapLay' | 'slapHit' | 'slapWrong' | 'slapPile' | 'slapCount' | 'familyTick' | 'familyReveal';
+export type CandySound = 'tap' | 'select' | 'safe' | 'poison' | 'lock' | 'reveal' | 'win' | 'lose' | 'aww' | 'cloudTick' | 'cloudWrong' | 'cloudFound' | 'cloudSwap' | 'cloudCall' | 'slapLay' | 'slapHit' | 'slapWrong' | 'slapPile' | 'slapCount' | 'familyTick' | 'familyReveal' | 'bombTick' | 'bombCountdown' | 'bombPass' | 'bombDodge' | 'bombBoom';
 const muteKey = 'little-arcade-candy-muted';
 
 export function useCandyAudio() {
@@ -68,6 +68,11 @@ export function useCandyAudio() {
           rustle(now, .12, .055); rustle(now + .13, .12, .05); rustle(now + .27, .17, .045);
           [523.25, 659.25, 783.99].forEach((note, i) => tone(note, now + .32 + i * .075, .22, 'sine', .035));
           break;
+        case 'bombTick': tone(430, now, .045, 'triangle', .025); break;
+        case 'bombCountdown': tone(660, now, .09, 'sine', .045); break;
+        case 'bombPass': tone(620, now, .12, 'triangle', .055, 430); break;
+        case 'bombDodge': tone(900, now, .13, 'sine', .055, 1280); break;
+        case 'bombBoom': rustle(now, .34, .11); tone(108, now, .68, 'sawtooth', .11, 38); break;
       }
     });
   }, [unlock]);
