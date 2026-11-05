@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { ClientToServerEvents, RoomView, ServerToClientEvents, TwoHalvesView } from '@arcade/shared';
 import type { Socket } from 'socket.io-client';
 import { GameDoodle } from '../../../doodles/GameDoodle';
@@ -49,6 +49,13 @@ function star(context: CanvasRenderingContext2D, x: number, y: number, r: number
   for (let i = 0; i < 8; i++) { const radius = i % 2 ? r * .25 : r; const angle = i * Math.PI / 4 - Math.PI / 2; const px = x + Math.cos(angle) * radius; const py = y + Math.sin(angle) * radius; if (!i) context.moveTo(px, py); else context.lineTo(px, py); }
   context.closePath(); context.fill();
 }
+function hueToHex(hue: number) {
+  const c = 1;
+  const x = 1 - Math.abs((hue / 60) % 2 - 1);
+  const [red, green, blue] = hue < 60 ? [c, x, 0] : hue < 120 ? [x, c, 0] : hue < 180 ? [0, c, x] : hue < 240 ? [0, x, c] : hue < 300 ? [x, 0, c] : [c, 0, x];
+  const toHex = (value: number) => Math.round(value * 255).toString(16).padStart(2, '0');
+  return `#${toHex(red)}${toHex(green)}${toHex(blue)}`;
+}
 
 export function TwoHalvesGame({ game, self, players, socket }: Props) {
   const [color, setColor] = useState(palettes.Pencils[6]);
@@ -58,6 +65,7 @@ export function TwoHalvesGame({ game, self, players, socket }: Props) {
   const [strength, setStrength] = useState(85);
   const [zoom, setZoom] = useState(100);
   const [imageScale, setImageScale] = useState(100);
+  const [hue, setHue] = useState(330);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -67,6 +75,7 @@ export function TwoHalvesGame({ game, self, players, socket }: Props) {
   const drawing = useRef(false);
   const lastPoint = useRef({ x: 0, y: 0 });
   const panStart = useRef<{ x: number; y: number; offsetX: number; offsetY: number } | null>(null);
+  const hueWheelRef = useRef<HTMLDivElement>(null);
   const history = useRef<ImageData[]>([]);
   const historyIndex = useRef(-1);
   const [, setHistoryVersion] = useState(0);
@@ -76,6 +85,20 @@ export function TwoHalvesGame({ game, self, players, socket }: Props) {
   const partner = players.find(player => player.id === partnerId);
   const myDone = Boolean(game.completed[self]);
   const partnerDone = Boolean(game.completed[partnerId]);
+  const chooseHue = (clientX: number, clientY: number) => {
+    const wheel = hueWheelRef.current; if (!wheel) return;
+    const bounds = wheel.getBoundingClientRect();
+    const angle = Math.atan2(clientY - (bounds.top + bounds.height / 2), clientX - (bounds.left + bounds.width / 2));
+    const nextHue = (Math.round((angle * 180 / Math.PI + 90 + 360) % 360) + 360) % 360;
+    setHue(nextHue); setColor(hueToHex(nextHue));
+  };
+  const handleHueKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowLeft', 'ArrowDown', 'ArrowRight', 'ArrowUp'].includes(event.key)) return;
+    event.preventDefault();
+    const delta = event.key === 'ArrowLeft' || event.key === 'ArrowDown' ? -5 : 5;
+    const nextHue = (hue + delta + 360) % 360;
+    setHue(nextHue); setColor(hueToHex(nextHue));
+  };
 
   const saveHistory = () => {
     const canvas = paintRef.current; const context = canvas?.getContext('2d'); if (!canvas || !context) return;
@@ -222,7 +245,7 @@ export function TwoHalvesGame({ game, self, players, socket }: Props) {
     {game.phase === 'coloring' && game.page && <main className="twohalves-studio">
       <nav className="twohalves-toolrail" aria-label="Drawing tools">{toolList.map(item => <button type="button" key={item.id} className={tool === item.id ? 'active' : ''} aria-pressed={tool === item.id} onClick={() => setTool(item.id)}><span>{item.icon}</span>{item.label}</button>)}</nav>
       <div className="twohalves-canvas-column"><div className="twohalves-studio-heading"><div><span className="twohalves-kicker">YOUR HALF · {me?.name ?? 'YOU'}</span><h1>{myDone ? 'Your half is ready!' : 'Make it yours.'}</h1></div><p>{partnerDone ? `${partner?.name ?? 'Your person'} finished their half ✦` : 'Your person is making the other half.'}</p></div><div className="twohalves-doodle-pair" aria-label="Players coloring together"><div className="twohalves-doodle-player"><GameDoodle id={playerDoodleId(players, me)} expression={myDone ? 'celebrating' : 'happy'} playing={!myDone} seed={`${self}:${myDone}`} size={54} name={me?.name}/><span>{me?.name ?? 'You'}</span></div><span className="twohalves-doodle-heart" aria-hidden="true">♡</span><div className="twohalves-doodle-player"><GameDoodle id={playerDoodleId(players, partner)} expression={partnerDone ? 'celebrating' : 'thinking'} playing={!partnerDone} seed={`${partnerId}:${partnerDone}`} size={54} flip name={partner?.name}/><span>{partner?.name ?? 'Your person'}</span></div></div><div className="twohalves-canvas-viewport"><div className="twohalves-canvas-stack" style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${(zoom * imageScale) / 10000})`, cursor: tool === 'move' ? 'grab' : tool === 'fill' ? 'cell' : tool === 'eraser' ? 'cell' : 'crosshair', touchAction: tool === 'move' ? 'pan-x pan-y' : 'none' }}><canvas ref={pageRef} aria-hidden="true"/><canvas ref={paintRef} aria-label={tool === 'move' ? 'Pan and scroll your half of the page' : 'Color only your half of the page'} style={{ touchAction: tool === 'move' ? 'pan-x pan-y' : 'none' }} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}/>{myDone && <span className="twohalves-done-stamp">✓ YOUR HALF IS READY</span>}      </div></div><div className="twohalves-canvas-zoom"><span>ZOOM</span><button type="button" aria-label="Zoom out" disabled={zoom <= 40} onClick={() => setZoom(value => Math.max(40, value - 20))}>−</button><strong>{zoom}%</strong><button type="button" aria-label="Zoom in" disabled={zoom >= 300} onClick={() => setZoom(value => Math.min(300, value + 20))}>+</button><button type="button" onClick={() => setZoom(100)}>Reset</button></div><div className="twohalves-history"><button onClick={undo} disabled={historyIndex.current <= 0 || myDone}>↶ Undo</button><button onClick={redo} disabled={historyIndex.current >= history.current.length - 1 || myDone}>↷ Redo</button><button onClick={clearHalf} disabled={!ready || myDone}>Clear half</button><button className="twohalves-done-button" disabled={!ready || game.paused || myDone} onClick={() => socket.emit('twohalves:complete')}>{myDone ? 'Half finished ✓' : 'Finish my half →'}</button></div></div>
-      <aside className="twohalves-palette-panel"><div className="twohalves-current-color"><label className="twohalves-current-swatch" style={{ backgroundColor: color }}><input type="color" value={color} onChange={event => setColor(event.target.value)} aria-label="Choose any color"/></label><span className="twohalves-color-square" style={{ backgroundColor: color }}/><code>{color.toUpperCase()}</code></div><div className="twohalves-palette-tabs">{(Object.keys(palettes) as Palette[]).map(name => <button className={palette === name ? 'active' : ''} key={name} onClick={() => setPalette(name)}>{name}</button>)}</div>      <div className="twohalves-mood-row" aria-label="Quick color moods"><span>MOOD</span>{moodPresets.map(mood => <button type="button" key={mood.name} className={palette === mood.palette && color.toLowerCase() === mood.color ? 'active' : ''} onClick={() => { setPalette(mood.palette); setColor(mood.color); }}><i aria-hidden="true">{mood.icon}</i>{mood.name}</button>)}</div><div className="twohalves-swatches" aria-label={`${palette} color palette`}>{palettes[palette].map(value => <button type="button" key={value} style={{ backgroundColor: value }} className={color.toLowerCase() === value.toLowerCase() ? 'selected' : ''} aria-label={`Choose ${value}`} onClick={() => setColor(value)}/>)}</div><section className="twohalves-adjust"><label><span>BRUSH SIZE</span><b>{size}</b></label><input type="range" min="2" max="54" value={size} onChange={event => setSize(Number(event.target.value))}/><label><span>STRENGTH</span><b>{strength}</b></label><input type="range" min="10" max="100" value={strength} onChange={event => setStrength(Number(event.target.value))}/><label><span>IMAGE SIZE</span><b>{imageScale}%</b></label><input type="range" min="40" max="100" step="10" value={imageScale} onChange={event => setImageScale(Number(event.target.value))}/>      </section><p className="twohalves-tool-hint">{tool === 'fill' ? 'Tap a closed shape to fill it.' : tool === 'glitter' ? 'Paint a trail of tiny sparkles.' : tool === 'eraser' ? 'Erase your colors without touching the page.' : 'Choose a tool, pick a color, and paint.'}</p></aside>
+      <aside className="twohalves-palette-panel"><div className="twohalves-current-color"><label className="twohalves-current-swatch" style={{ backgroundColor: color }}><input type="color" value={color} onChange={event => setColor(event.target.value)} aria-label="Choose any color"/></label><span className="twohalves-color-square" style={{ backgroundColor: color }}/><code>{color.toUpperCase()}</code></div><div className="twohalves-palette-tabs">{(Object.keys(palettes) as Palette[]).map(name => <button className={palette === name ? 'active' : ''} key={name} onClick={() => setPalette(name)}>{name}</button>)}</div>            <div className="twohalves-mood-row" aria-label="Quick color moods"><span>MOOD</span>{moodPresets.map(mood => <button type="button" key={mood.name} className={palette === mood.palette && color.toLowerCase() === mood.color ? 'active' : ''} onClick={() => { setPalette(mood.palette); setColor(mood.color); }}><i aria-hidden="true">{mood.icon}</i>{mood.name}</button>)}</div><div className="twohalves-hue-picker"><div className="twohalves-hue-wheel" ref={hueWheelRef} role="slider" tabIndex={0} aria-label="Choose a hue" aria-valuemin={0} aria-valuemax={359} aria-valuenow={hue} onKeyDown={handleHueKey} onPointerDown={event => { event.currentTarget.setPointerCapture(event.pointerId); chooseHue(event.clientX, event.clientY); }} onPointerMove={event => { if (event.currentTarget.hasPointerCapture(event.pointerId)) chooseHue(event.clientX, event.clientY); }}>      <span style={{ backgroundColor: hueToHex(hue), transform: `rotate(${hue}deg) translateY(-38px)` }} /></div><div><b>HUE CIRCLE</b><small>Drag or tap to choose any color</small></div></div><div className="twohalves-swatches" aria-label={`${palette} color palette`}>{palettes[palette].map(value => <button type="button" key={value} style={{ backgroundColor: value }} className={color.toLowerCase() === value.toLowerCase() ? 'selected' : ''} aria-label={`Choose ${value}`} onClick={() => setColor(value)}/>)}</div><section className="twohalves-adjust"><label><span>BRUSH SIZE</span><b>{size}</b></label><input type="range" min="2" max="54" value={size} onChange={event => setSize(Number(event.target.value))}/><label><span>STRENGTH</span><b>{strength}</b></label><input type="range" min="10" max="100" value={strength} onChange={event => setStrength(Number(event.target.value))}/><label><span>IMAGE SIZE</span><b>{imageScale}%</b></label><input type="range" min="40" max="100" step="10" value={imageScale} onChange={event => setImageScale(Number(event.target.value))}/>      </section><p className="twohalves-tool-hint">{tool === 'fill' ? 'Tap a closed shape to fill it.' : tool === 'glitter' ? 'Paint a trail of tiny sparkles.' : tool === 'eraser' ? 'Erase your colors without touching the page.' : 'Choose a tool, pick a color, and paint.'}</p></aside>
     </main>}
     {game.phase === 'complete' && game.page && <main className="twohalves-result"><span className="twohalves-kicker">MADE TOGETHER</span><h1>Look what <em>you made.</em></h1><p>Two different sides, one lovely little surprise.</p><div className="twohalves-result-doodles" aria-label="You both finished the masterpiece"><GameDoodle id={playerDoodleId(players, me)} expression="celebrating" playing seed={`${self}:complete`} size={76} name={me?.name}/><span aria-hidden="true">✦</span><GameDoodle id={playerDoodleId(players, partner)} expression="celebrating" playing seed={`${partnerId}:complete`} size={76} flip name={partner?.name}/></div><div className="twohalves-merged"><canvas ref={mergedRef} aria-label="Your merged coloring masterpiece"/></div><div className="twohalves-result-actions"><button className="twohalves-primary" onClick={download}>Download your masterpiece ↓</button><button className="twohalves-secondary" onClick={exit}>Back to our games</button></div></main>}
   </section>;
