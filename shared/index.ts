@@ -1,4 +1,4 @@
-export type GameId = 'hangman' | 'cups' | 'poison' | 'cloud' | 'slapcount' | 'familyfeud' | 'rps' | 'hotbomb';
+export type GameId = 'hangman' | 'cups' | 'poison' | 'cloud' | 'slapcount' | 'familyfeud' | 'rps' | 'hotbomb' | 'twohalves';
 export { REACTIONS, isReactionId } from './reactions.js';
 export type { ReactionId } from './reactions.js';
 export type MatchFormat = 'quick' | 'bestOf3' | 'bestOf5';
@@ -107,6 +107,11 @@ export type HotBombView = {
   lastEvent?: { id: number; type: 'go' | 'launched' | 'dodge' | 'feintReversed' | 'boom'; player?: string; loser?: string; mode?: 'held' | 'pass' | 'bounce' | 'feint' };
   lastReaction?: { player: string; emoji: string; at: number };
 };
+export type TwoHalvesView = {
+  game: 'twohalves'; phase: 'page' | 'coloring' | 'complete'; players: [string, string];
+  page?: string; halves: Record<string, string>; completed: Record<string, boolean>; paused: boolean;
+  lastReaction?: { player: string; emoji: string; at: number };
+};
 export type PoisonMove =
   | { type: 'poison:pickTile'; tile: number }
   | { type: 'poison:lockPick' }
@@ -127,7 +132,7 @@ export type SlapMove =
   | { type: 'slap:nextRound' }
   | { type: 'slap:backToLobby' };
 export type RoomView = {
-  self: string; players: PlayerSummary[]; status: string; game: HangmanView | CupsView | PoisonView | CloudView | SlapView | FamilyFeudView | RpsView | HotBombView | null;
+  self: string; players: PlayerSummary[]; status: string; game: HangmanView | CupsView | PoisonView | CloudView | SlapView | FamilyFeudView | RpsView | HotBombView | TwoHalvesView | null;
   scoreboard: Scoreboard; sameSweetMoments: number; error?: string;
 };
 export type ClientToServerEvents = {
@@ -138,6 +143,10 @@ export type ClientToServerEvents = {
   'rps:next': () => void;
   'hotbomb:action': (payload: { action: HotBombAction }) => void;
   'hotbomb:next': () => void;
+  'twohalves:page': (payload: { page: string }) => void;
+  'twohalves:paint': (payload: { image: string }) => void;
+  'twohalves:complete': () => void;
+  'twohalves:back': () => void;
   'familyfeud:start': () => void;
   'familyfeud:submit': (payload: { answer: string }) => void;
   'familyfeud:score': (payload: { target: string; matchIndex: number | null; points: number }) => void;

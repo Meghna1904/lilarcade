@@ -28,7 +28,7 @@ export function GameTicket({ config, canPlay, onLaunch }: { config: GameTicketCo
     setAnchor({ top: Math.min(rect.bottom + 5, window.innerHeight - 360), left: Math.max(12, Math.min(rect.right - 300, window.innerWidth - 312)) });
     setTweakOpen(true);
   };
-  const ticketNumber = ['hangman','cups','poison','cloud','slapcount','familyfeud','hotbomb','rps'].indexOf(config.id) + 1;
+  const ticketNumber = ['hangman','cups','poison','cloud','slapcount','familyfeud','hotbomb','rps','twohalves'].indexOf(config.id) + 1;
   return <div className="ticket-wrap" style={{ '--ticket-accent': config.accent, '--ticket-tilt': `${(config.id.length % 2 ? -1 : 1) * (config.id === 'hangman' ? .7 : .35)}deg`, '--ticket-index': String(ticketNumber).padStart(2, '0') } as React.CSSProperties}>
     <article className="game-ticket" aria-labelledby={`ticket-${config.id}-title`}>
       {config.image ? <img className="ticket-art-image" src={config.image} alt=""/> : <div className="ticket-art"><config.art className={artName}/><span className="ticket-number">No. {String(ticketNumber).padStart(2, '0')}</span><i className="ticket-tape"/></div>}
