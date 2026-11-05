@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ClientToServerEvents, RoomView, ServerToClientEvents, TwoHalvesView } from '@arcade/shared';
 import type { Socket } from 'socket.io-client';
+import { GameDoodle } from '../../../doodles/GameDoodle';
+import { playerDoodleId } from '../../../doodles/playerDoodle';
 import './two-halves.css';
 
 type Props = { game: TwoHalvesView; self: string; players: RoomView['players']; socket: Socket<ServerToClientEvents, ClientToServerEvents> };
@@ -19,21 +21,21 @@ const samplePage = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://
 const toolList: Array<{ id: Tool; icon: string; label: string }> = [
   { id: 'pencil', icon: '✎', label: 'Pencil' }, { id: 'marker', icon: '／', label: 'Marker' }, { id: 'crayon', icon: '╱', label: 'Crayon' },
   { id: 'pastel', icon: '▯', label: 'Pastel' }, { id: 'watercolor', icon: '♧', label: 'Watercolor' }, { id: 'brush', icon: '🖌', label: 'Brush' },
-  { id: 'glitter', icon: '✧', label: 'Glitter' }, { id: 'fill', icon: '◈', label: 'Fill' }, { id: 'eraser', icon: '▱', label: 'Eraser' }, { id: 'move', icon: '✋', label: 'Move' },
+  { id: 'glitter', icon: '✧', label: 'Glitter' }, { id: 'fill', icon: '◈', label: 'Fill' },   { id: 'eraser', icon: '▱', label: 'Eraser' }, { id: 'move', icon: '✋', label: 'Pan / scroll' },
 ];
 function imageFrom(src: string) { return new Promise<HTMLImageElement>((resolve, reject) => { const image = new Image(); image.onload = () => resolve(image); image.onerror = reject; image.src = src; }); }
-function smallSnapshot(canvas: HTMLCanvasElement) {
-  let scale = 1;
+function smallSnapshot(canvas: HTMLCanvasElement, preferredScale = 1) {
+  let scale = preferredScale;
   let output = document.createElement('canvas');
   let data = '';
   do {
     output.width = Math.round(canvas.width * scale); output.height = Math.round(canvas.height * scale);
     output.getContext('2d')?.drawImage(canvas, 0, 0, output.width, output.height);
-    data = output.toDataURL('image/webp', .55);
+    data = output.toDataURL('image/webp', .7);
     if (!data.startsWith('data:image/webp,')) data = output.toDataURL('image/png');
-    if (data.length <= 245_000) return data;
-    scale *= .82;
-  } while (scale > .5);
+    if (data.length <= 220_000) return data;
+    scale *= .78;
+  } while (scale > .2);
   return data;
 }
 function star(context: CanvasRenderingContext2D, x: number, y: number, r: number) {
@@ -49,6 +51,7 @@ export function TwoHalvesGame({ game, self, players, socket }: Props) {
   const [size, setSize] = useState(6);
   const [strength, setStrength] = useState(85);
   const [zoom, setZoom] = useState(100);
+  const [imageScale, setImageScale] = useState(100);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -74,7 +77,7 @@ export function TwoHalvesGame({ game, self, players, socket }: Props) {
     history.current.push(context.getImageData(0, 0, WIDTH, HEIGHT)); historyIndex.current = history.current.length - 1;
     setHistoryVersion(value => value + 1);
   };
-  const syncPaint = () => { const canvas = paintRef.current; if (canvas) socket.emit('twohalves:paint', { image: smallSnapshot(canvas) }); };
+  const syncPaint = () => { const canvas = paintRef.current; if (canvas) socket.emit('twohalves:paint', { image: smallSnapshot(canvas, imageScale / 100) }); };
   const setFromHistory = (index: number) => {
     const canvas = paintRef.current; const context = canvas?.getContext('2d'); const frame = history.current[index]; if (!canvas || !context || !frame) return;
     context.putImageData(frame, 0, 0); historyIndex.current = index; setHistoryVersion(value => value + 1); syncPaint();
@@ -118,17 +121,22 @@ export function TwoHalvesGame({ game, self, players, socket }: Props) {
 
   const startPage = async (file?: File) => {
     setBusy(true);
+    const objectUrl = file ? URL.createObjectURL(file) : undefined;
     try {
-      const source = file ? await imageFrom(URL.createObjectURL(file)) : await imageFrom(samplePage);
+      if (file && (!file.type.startsWith('image/') || file.size > 10 * 1024 * 1024)) {
+        window.alert('Please choose an image file under 10 MB.');
+        return;
+      }
+      const source = file && objectUrl ? await imageFrom(objectUrl) : await imageFrom(samplePage);
       const scale = Math.min(1, 1200 / source.width, 900 / source.height);
       const canvas = document.createElement('canvas'); canvas.width = Math.round(source.width * scale); canvas.height = Math.round(source.height * scale);
       canvas.getContext('2d')?.drawImage(source, 0, 0, canvas.width, canvas.height);
       let quality = .78; let data = canvas.toDataURL('image/jpeg', quality);
       while (data.length > 320_000 && quality > .35) { quality -= .08; data = canvas.toDataURL('image/jpeg', quality); }
-      if (data.length > 320_000) { window.alert('This image is too large to share after resizing. Please choose a smaller one.'); return; }
+      if (data.length > 320_000) { window.alert('This picture is too detailed to share. Please choose a smaller image.'); return; }
       socket.emit('twohalves:page', { page: data });
     } catch { window.alert('That image could not be opened. Try a PNG or JPG.'); }
-    finally { setBusy(false); }
+    finally { if (objectUrl) URL.revokeObjectURL(objectUrl); setBusy(false); }
   };
   const point = (event: React.PointerEvent<HTMLCanvasElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -162,9 +170,12 @@ export function TwoHalvesGame({ game, self, players, socket }: Props) {
   };
   const down = (event: React.PointerEvent<HTMLCanvasElement>) => {
     if (!ready || myDone || game.paused) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
     const p = point(event); lastPoint.current = p;
-    if (tool === 'move') { panStart.current = { x: event.clientX, y: event.clientY, offsetX: offset.x, offsetY: offset.y }; return; }
+    if (tool === 'move') {
+      panStart.current = { x: event.clientX, y: event.clientY, offsetX: offset.x, offsetY: offset.y };
+      return;
+    }
+    event.currentTarget.setPointerCapture(event.pointerId);
     if (tool === 'fill') { fill(p); return; }
     const context = event.currentTarget.getContext('2d'); if (!context) return;
     drawing.current = true; context.beginPath(); context.moveTo(p.x, p.y); context.lineTo(p.x + .01, p.y + .01);
@@ -201,12 +212,12 @@ export function TwoHalvesGame({ game, self, players, socket }: Props) {
   return <section className="twohalves-screen">
     <header className="twohalves-header"><button className="twohalves-back" onClick={exit}>← Lobby</button><div className="twohalves-title"><span>◐</span><b>Two Halves</b><small>A coloring date for two</small></div><span className="twohalves-step">{game.phase === 'page' ? '01 · PICK A PAGE' : game.phase === 'complete' ? '03 · YOUR MASTERPIECE' : '02 · MAKE IT YOURS'}</span></header>
     {game.paused && <p className="twohalves-wait" role="status">Waiting for your person to reconnect…</p>}
-    {game.phase === 'page' && <main className="twohalves-welcome"><div className="twohalves-copy"><span className="twohalves-kicker">A LITTLE ART DATE</span><h1>Two hands.<br/>One <em>masterpiece.</em></h1><p>Pick a coloring page, split it down the middle, and paint your own side. Then bring them together and see what you made.</p><div className="twohalves-page-actions"><button className="twohalves-primary" disabled={busy} onClick={() => void startPage()}>{busy ? 'Getting things ready…' : 'Try our little page ✦'}</button><label className="twohalves-upload">Upload a coloring page<input type="file" accept="image/png,image/jpeg,image/webp" onChange={event => { const file = event.target.files?.[0]; if (file) void startPage(file); event.target.value = ''; }}/></label></div><small>PNG, JPG or WebP · under 10 MB before resizing</small></div><div className="twohalves-preview-card"><div className="twohalves-sample-art"><img src={samplePage} alt="A line drawing of a smiling sun"/><i/><span>YOUR PAGE, IN TWO</span></div><div className="twohalves-pair"><span>{me?.name ?? 'You'} <b>left half</b></span><span>{partner?.name ?? 'Your person'} <b>right half</b></span></div></div></main>}
+    {game.phase === 'page' && <main className="twohalves-welcome"><div className="twohalves-copy"><span className="twohalves-kicker">A LITTLE ART DATE</span><h1>Two hands.<br/>One <em>masterpiece.</em></h1><p>Pick a coloring page, split it down the middle, and paint your own side. Then bring them together and see what you made.</p><div className="twohalves-page-actions"><button className="twohalves-primary" disabled={busy} onClick={() => void startPage()}>{busy ? 'Getting things ready…' : 'Try our little page ✦'}</button><label className="twohalves-upload">Upload any picture<input type="file" accept="image/*" onChange={event => { const file = event.target.files?.[0]; if (file) void startPage(file); event.target.value = ''; }}/></label></div><small>Any picture your browser can open · under 10 MB before resizing</small></div><div className="twohalves-preview-card"><div className="twohalves-sample-art"><img src={samplePage} alt="A line drawing of a smiling sun"/><i/><span>YOUR PAGE, IN TWO</span></div><div className="twohalves-pair"><span>{me?.name ?? 'You'} <b>left half</b></span><span>{partner?.name ?? 'Your person'} <b>right half</b></span></div></div></main>}
     {game.phase === 'coloring' && game.page && <main className="twohalves-studio">
       <nav className="twohalves-toolrail" aria-label="Drawing tools">{toolList.map(item => <button type="button" key={item.id} className={tool === item.id ? 'active' : ''} aria-pressed={tool === item.id} onClick={() => setTool(item.id)}><span>{item.icon}</span>{item.label}</button>)}</nav>
-      <div className="twohalves-canvas-column"><div className="twohalves-studio-heading"><div><span className="twohalves-kicker">YOUR HALF · {me?.name ?? 'YOU'}</span><h1>{myDone ? 'Your half is ready!' : 'Make it yours.'}</h1></div><p>{partnerDone ? `${partner?.name ?? 'Your person'} finished their half ✦` : 'Your person is making the other half.'}</p></div><div className="twohalves-canvas-viewport"><div className="twohalves-canvas-stack" style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom / 100})`, cursor: tool === 'move' ? 'grab' : tool === 'fill' ? 'cell' : tool === 'eraser' ? 'cell' : 'crosshair' }}><canvas ref={pageRef} aria-hidden="true"/><canvas ref={paintRef} aria-label="Color only your half of the page" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}/>{myDone && <span className="twohalves-done-stamp">✓ YOUR HALF IS READY</span>}</div></div><div className="twohalves-history"><button onClick={undo} disabled={historyIndex.current <= 0 || myDone}>↶ Undo</button><button onClick={redo} disabled={historyIndex.current >= history.current.length - 1 || myDone}>↷ Redo</button><button onClick={clearHalf} disabled={!ready || myDone}>Clear half</button><button className="twohalves-done-button" disabled={!ready || game.paused || myDone} onClick={() => socket.emit('twohalves:complete')}>{myDone ? 'Half finished ✓' : 'Finish my half →'}</button></div></div>
-      <aside className="twohalves-palette-panel"><div className="twohalves-current-color"><label className="twohalves-current-swatch" style={{ backgroundColor: color }}><input type="color" value={color} onChange={event => setColor(event.target.value)} aria-label="Choose any color"/></label><span className="twohalves-color-square" style={{ backgroundColor: color }}/><code>{color.toUpperCase()}</code></div><div className="twohalves-palette-tabs">{(Object.keys(palettes) as Palette[]).map(name => <button className={palette === name ? 'active' : ''} key={name} onClick={() => setPalette(name)}>{name}</button>)}</div><div className="twohalves-swatches" aria-label={`${palette} color palette`}>{palettes[palette].map(value => <button type="button" key={value} style={{ backgroundColor: value }} className={color.toLowerCase() === value.toLowerCase() ? 'selected' : ''} aria-label={`Choose ${value}`} onClick={() => setColor(value)}/>)}</div><section className="twohalves-adjust"><label><span>SIZE</span><b>{size}</b></label><input type="range" min="2" max="54" value={size} onChange={event => setSize(Number(event.target.value))}/><label><span>STRENGTH</span><b>{strength}</b></label><input type="range" min="10" max="100" value={strength} onChange={event => setStrength(Number(event.target.value))}/><div className="twohalves-zoom"><span>ZOOM</span>{[100,160,240].map(value => <button key={value} className={zoom === value ? 'active' : ''} onClick={() => setZoom(value)}>{value}%</button>)}</div></section><p className="twohalves-tool-hint">{tool === 'fill' ? 'Tap a closed shape to fill it.' : tool === 'glitter' ? 'Paint a trail of tiny sparkles.' : tool === 'eraser' ? 'Erase your colors without touching the page.' : 'Choose a tool, pick a color, and paint.'}</p></aside>
+      <div className="twohalves-canvas-column"><div className="twohalves-studio-heading"><div><span className="twohalves-kicker">YOUR HALF · {me?.name ?? 'YOU'}</span><h1>{myDone ? 'Your half is ready!' : 'Make it yours.'}</h1></div><p>{partnerDone ? `${partner?.name ?? 'Your person'} finished their half ✦` : 'Your person is making the other half.'}</p></div><div className="twohalves-doodle-pair" aria-label="Players coloring together"><div className="twohalves-doodle-player"><GameDoodle id={playerDoodleId(players, me)} expression={myDone ? 'celebrating' : 'happy'} playing={!myDone} seed={`${self}:${myDone}`} size={54} name={me?.name}/><span>{me?.name ?? 'You'}</span></div><span className="twohalves-doodle-heart" aria-hidden="true">♡</span><div className="twohalves-doodle-player"><GameDoodle id={playerDoodleId(players, partner)} expression={partnerDone ? 'celebrating' : 'thinking'} playing={!partnerDone} seed={`${partnerId}:${partnerDone}`} size={54} flip name={partner?.name}/><span>{partner?.name ?? 'Your person'}</span></div></div><div className="twohalves-canvas-viewport"><div className="twohalves-canvas-stack" style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${(zoom * imageScale) / 10000})`, cursor: tool === 'move' ? 'grab' : tool === 'fill' ? 'cell' : tool === 'eraser' ? 'cell' : 'crosshair', touchAction: tool === 'move' ? 'pan-x pan-y' : 'none' }}><canvas ref={pageRef} aria-hidden="true"/><canvas ref={paintRef} aria-label={tool === 'move' ? 'Pan and scroll your half of the page' : 'Color only your half of the page'} style={{ touchAction: tool === 'move' ? 'pan-x pan-y' : 'none' }} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}/>{myDone && <span className="twohalves-done-stamp">✓ YOUR HALF IS READY</span>}</div></div><div className="twohalves-history"><button onClick={undo} disabled={historyIndex.current <= 0 || myDone}>↶ Undo</button><button onClick={redo} disabled={historyIndex.current >= history.current.length - 1 || myDone}>↷ Redo</button><button onClick={clearHalf} disabled={!ready || myDone}>Clear half</button><button className="twohalves-done-button" disabled={!ready || game.paused || myDone} onClick={() => socket.emit('twohalves:complete')}>{myDone ? 'Half finished ✓' : 'Finish my half →'}</button></div></div>
+      <aside className="twohalves-palette-panel"><div className="twohalves-current-color"><label className="twohalves-current-swatch" style={{ backgroundColor: color }}><input type="color" value={color} onChange={event => setColor(event.target.value)} aria-label="Choose any color"/></label><span className="twohalves-color-square" style={{ backgroundColor: color }}/><code>{color.toUpperCase()}</code></div><div className="twohalves-palette-tabs">{(Object.keys(palettes) as Palette[]).map(name => <button className={palette === name ? 'active' : ''} key={name} onClick={() => setPalette(name)}>{name}</button>)}</div><div className="twohalves-swatches" aria-label={`${palette} color palette`}>{palettes[palette].map(value => <button type="button" key={value} style={{ backgroundColor: value }} className={color.toLowerCase() === value.toLowerCase() ? 'selected' : ''} aria-label={`Choose ${value}`} onClick={() => setColor(value)}/>)}</div><section className="twohalves-adjust"><label><span>BRUSH SIZE</span><b>{size}</b></label><input type="range" min="2" max="54" value={size} onChange={event => setSize(Number(event.target.value))}/><label><span>STRENGTH</span><b>{strength}</b></label><input type="range" min="10" max="100" value={strength} onChange={event => setStrength(Number(event.target.value))}/><label><span>IMAGE SIZE</span><b>{imageScale}%</b></label><input type="range" min="40" max="100" step="10" value={imageScale} onChange={event => setImageScale(Number(event.target.value))}/><div className="twohalves-zoom"><span>ZOOM</span>{[100,160,240].map(value => <button key={value} className={zoom === value ? 'active' : ''} onClick={() => setZoom(value)}>{value}%</button>)}</div></section><p className="twohalves-tool-hint">{tool === 'fill' ? 'Tap a closed shape to fill it.' : tool === 'glitter' ? 'Paint a trail of tiny sparkles.' : tool === 'eraser' ? 'Erase your colors without touching the page.' : 'Choose a tool, pick a color, and paint.'}</p></aside>
     </main>}
-    {game.phase === 'complete' && game.page && <main className="twohalves-result"><span className="twohalves-kicker">MADE TOGETHER</span><h1>Look what <em>you made.</em></h1><p>Two different sides, one lovely little surprise.</p><div className="twohalves-merged"><canvas ref={mergedRef} aria-label="Your merged coloring masterpiece"/></div><div className="twohalves-result-actions"><button className="twohalves-primary" onClick={download}>Download your masterpiece ↓</button><button className="twohalves-secondary" onClick={exit}>Back to our games</button></div></main>}
+    {game.phase === 'complete' && game.page && <main className="twohalves-result"><span className="twohalves-kicker">MADE TOGETHER</span><h1>Look what <em>you made.</em></h1><p>Two different sides, one lovely little surprise.</p><div className="twohalves-result-doodles" aria-label="You both finished the masterpiece"><GameDoodle id={playerDoodleId(players, me)} expression="celebrating" playing seed={`${self}:complete`} size={76} name={me?.name}/><span aria-hidden="true">✦</span><GameDoodle id={playerDoodleId(players, partner)} expression="celebrating" playing seed={`${partnerId}:complete`} size={76} flip name={partner?.name}/></div><div className="twohalves-merged"><canvas ref={mergedRef} aria-label="Your merged coloring masterpiece"/></div><div className="twohalves-result-actions"><button className="twohalves-primary" onClick={download}>Download your masterpiece ↓</button><button className="twohalves-secondary" onClick={exit}>Back to our games</button></div></main>}
   </section>;
 }
