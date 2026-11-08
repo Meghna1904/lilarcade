@@ -1,0 +1,264 @@
+/* Studio layout: pane-based grid with fit + zoom, independent of window media queries. */
+
+.twohalves-app-shell{height:100dvh;min-height:0;overflow:auto;display:flex;flex-direction:column}
+.twohalves-screen{flex:1 1 auto;display:flex;flex-direction:column;height:100%;min-height:0;min-width:0;align-items:stretch;overflow:hidden}
+.twohalves-screen>.twohalves-header,.twohalves-screen>.twohalves-wait{flex:none}
+
+/* Beat the older shrink-wrapped studio rule so the pane always fills its track. */
+.twohalves-screen>.twohalves-studio{
+  width:100%;max-width:none;margin:0;flex:1 1 auto;align-self:stretch;
+  min-width:0;min-height:0;height:auto;box-sizing:border-box;
+  padding:8px clamp(8px,2vw,24px) 10px;
+}
+.twohalves-screen>.twohalves-studio[data-mode=narrow]{overflow-x:hidden;overflow-y:auto}
+
+.twohalves-studio{
+  flex:1 1 auto;min-width:0;min-height:0;margin:0;
+  padding:8px clamp(8px,2vw,24px) 10px;box-sizing:border-box;
+  display:grid;gap:10px;overflow:hidden;min-width:0;min-height:0;
+}
+.twohalves-studio[data-mode=wide]{
+  grid-template-columns:74px minmax(0,1fr) 320px;
+  grid-template-rows:minmax(0,1fr);
+  grid-template-areas:"tools canvas palette";
+}
+.twohalves-studio[data-mode=narrow]{
+  grid-template-columns:minmax(0,1fr);
+  grid-template-rows:auto minmax(0,1fr);
+  grid-template-areas:"tools" "canvas";
+  padding-inline:8px;overflow-y:auto;
+}
+
+/* Tool rail ------------------------------------------------------------------ */
+.twohalves-studio .twohalves-toolrail{grid-area:tools;min-width:0;min-height:0;display:flex;gap:6px;padding:2px;box-sizing:border-box}
+.twohalves-studio[data-mode=wide] .twohalves-toolrail{flex-direction:column;overflow-y:auto;overflow-x:hidden}
+.twohalves-studio[data-mode=narrow] .twohalves-toolrail{flex-direction:row;overflow-x:auto;overflow-y:hidden;padding-bottom:6px;scrollbar-width:thin}
+.twohalves-studio[data-mode=narrow] .twohalves-toolrail button{flex:0 0 auto;width:58px;height:46px;font-size:9px;gap:2px}
+.twohalves-studio[data-mode=narrow] .twohalves-toolrail button span{font-size:15px}
+.twohalves-studio .twohalves-toolrail button{min-width:0}
+
+/* Canvas column ------------------------------------------------------------- */
+.twohalves-canvas-column{
+  grid-area:canvas;min-width:0;min-height:0;display:flex;flex-direction:column;gap:8px;overflow:hidden;
+}
+.twohalves-studio[data-mode=narrow] .twohalves-canvas-column{min-height:0;overflow:hidden}
+.twohalves-studio-heading{flex:none;min-width:0}
+.twohalves-studio[data-mode=narrow] .twohalves-studio-heading{display:none}
+
+.twohalves-studio .twohalves-canvas-viewport{
+  position:relative;flex:1 1 auto;display:block;place-items:initial;
+  width:100%;min-width:0;min-height:140px;height:auto;max-height:none;
+  padding:0;margin:0;overflow:hidden;box-sizing:border-box;
+  border:1px solid #ffffff12;border-radius:12px;background:
+    radial-gradient(circle at 1px 1px,#ffffff0f 1px,transparent 0) 0 0/22px 22px,#0a0c1c;
+  touch-action:none;
+}
+.twohalves-canvas-viewport[data-panning=true]{cursor:grabbing}
+.twohalves-canvas-viewport[data-tool=hand]{cursor:grab}
+.twohalves-canvas-viewport[data-tool=fill] canvas{cursor:cell}
+.twohalves-canvas-viewport[data-tool=hand] canvas{cursor:grab}
+
+.twohalves-canvas-stack{
+  position:absolute;left:0;top:0;transform-origin:0 0;will-change:transform;
+  background:#fff;box-shadow:0 12px 44px #00000066;border-radius:1px;
+}
+.twohalves-canvas-stack canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+.twohalves-canvas-stack canvas:first-of-type{pointer-events:auto}
+.twohalves-canvas-stack canvas:last-of-type{pointer-events:none;mix-blend-mode:multiply}
+.twohalves-canvas-stack .twohalves-done-stamp{pointer-events:none}
+
+.twohalves-brush-cursor{
+  position:absolute;z-index:6;border:1px solid #fff;border-radius:50%;
+  transform:translate(-50%,-50%);pointer-events:none;mix-blend-mode:difference;
+}
+
+/* History / zoom bar -------------------------------------------------------- */
+.twohalves-studio .twohalves-history{flex:none;display:flex;flex-wrap:wrap;gap:6px;min-width:0;align-items:center}
+.twohalves-zoom{display:flex;align-items:center;gap:4px;min-width:0}
+.twohalves-zoom output{
+  min-width:46px;text-align:center;font:11px ui-monospace,monospace;color:#c9cdf3;
+  padding:5px 4px;border:1px solid #ffffff14;border-radius:6px;background:#111430;
+}
+.twohalves-zoom button{min-width:30px}
+.twohalves-color-trigger{display:flex;align-items:center;gap:6px}
+.twohalves-color-trigger span{width:16px;height:16px;border-radius:50%;box-shadow:inset 0 0 0 1px #ffffff55}
+
+/* Color panel --------------------------------------------------------------- */
+.twohalves-studio .twohalves-palette-panel{
+  grid-area:palette;min-width:0;min-height:0;overflow-y:auto;overflow-x:hidden;
+  overscroll-behavior:contain;background:#171a33;border:1px solid #ffffff10;border-radius:14px;
+}
+.twohalves-studio[data-mode=narrow] .twohalves-palette-panel{
+  position:fixed;left:0;right:0;bottom:0;z-index:80;
+  max-height:min(78dvh,640px);overflow-y:auto;border-radius:18px 18px 0 0;border:1px solid #ffffff1f;
+  padding:16px 14px calc(18px + env(safe-area-inset-bottom));
+  box-shadow:0 -22px 60px #000000aa;transform:translateY(108%);
+  transition:transform .22s cubic-bezier(.32,.72,0,1);visibility:hidden;
+}
+.twohalves-studio[data-mode=narrow] .twohalves-palette-panel.open{transform:none;visibility:visible}
+.twohalves-drawer-close{
+  position:sticky;top:0;margin-left:auto;display:block;z-index:2;
+  width:32px;height:32px;border:1px solid #ffffff22;border-radius:50%;
+  background:#22264a;color:#e6e7f5;font-size:14px;cursor:pointer;
+}
+.twohalves-drawer-backdrop{position:fixed;inset:0;z-index:70;border:0;background:#04061499;cursor:pointer}
+
+/* Hue ring + inner square --------------------------------------------------- */
+.twohalves-picker-mode{display:flex;gap:6px;margin:12px 0 6px;flex-wrap:wrap}
+.twohalves-picker-mode button{
+  flex:1 1 0;padding:7px 8px;border:1px solid #ffffff1f;border-radius:8px;
+  background:#141730;color:#c9cdf3;font-size:10px;font-weight:700;cursor:pointer;white-space:nowrap;
+}
+.twohalves-picker-mode button.active{background:#eceefa;color:#1b1e3a;border-color:#eceefa}
+
+.twohalves-hue-ring{
+  position:relative;width:min(100%,224px);aspect-ratio:1;margin:10px auto 8px;
+  border-radius:50%;touch-action:none;cursor:crosshair;
+  box-shadow:0 0 0 1px #ffffff1a,0 8px 24px #0006;
+}
+.twohalves-hue-ring:after{
+  content:'';position:absolute;inset:13%;border-radius:50%;
+  background:#171a33;box-shadow:inset 0 0 0 1px #ffffff1f;
+}
+.twohalves-ring-square{
+  position:absolute;left:21%;top:21%;width:58%;height:58%;z-index:1;
+  border-radius:9px;overflow:hidden;pointer-events:none;
+  box-shadow:0 0 0 1px #00000088,0 2px 10px #00000066;
+}
+.twohalves-ring-square span{
+  position:absolute;width:14px;height:14px;border:2px solid #fff;border-radius:50%;
+  transform:translate(-50%,-50%);box-shadow:0 0 0 1px #171a35,0 2px 6px #0008;
+}
+.twohalves-ring-handle{
+  position:absolute;width:18px;height:18px;z-index:2;border:3px solid #fff;border-radius:50%;
+  transform:translate(-50%,-50%);box-shadow:0 0 0 1px #171a35,0 3px 8px #0008;pointer-events:none;
+}
+
+/* Small screens: never collapse, allow vertical scroll instead. */
+@media(max-width:520px){
+  .twohalves-app-shell{height:100dvh;overflow:auto}
+  .twohalves-studio{padding-inline:6px}
+  .twohalves-studio[data-mode=narrow] .twohalves-canvas-viewport{min-height:180px}
+  .twohalves-zoom output{min-width:40px}
+  .twohalves-history button{padding:7px 8px;font-size:10px}
+}
+
+@media(prefers-reduced-motion:reduce){
+  .twohalves-studio[data-mode=narrow] .twohalves-palette-panel{transition:none}
+}
+/* ==========================================================================
+   Tear, merge and seam
+   ========================================================================== */
+
+.twohalves-screen>.twohalves-welcome,
+.twohalves-screen>.twohalves-result{flex:1 1 auto;min-height:0;overflow-y:auto;width:100%}
+.twohalves-result{padding-bottom:34px}
+
+/* Tear stage --------------------------------------------------------------- */
+.twohalves-screen>.twohalves-tear{
+  flex:1 1 auto;min-height:0;min-width:0;width:100%;box-sizing:border-box;
+  display:grid;grid-template-columns:minmax(230px,340px) minmax(0,1fr);
+  gap:clamp(16px,4vw,56px);align-items:center;overflow-y:auto;
+  padding:clamp(12px,3vh,34px) clamp(10px,3vw,40px);
+}
+.twohalves-tear-copy{display:flex;flex-direction:column;gap:14px;min-width:0;max-width:430px}
+.twohalves-tear-copy h1{font:700 clamp(30px,4.4vw,54px)/1.02 'Bricolage Grotesque',system-ui,sans-serif;letter-spacing:-.045em;margin:0}
+.twohalves-tear-copy p{color:#9ea3c6;font-size:14px;line-height:1.6;margin:0}
+.twohalves-tear-copy .twohalves-setting-group{justify-content:flex-start}
+.twohalves-tear-wait{color:#d6b7e6;font-size:12px;font-weight:700;letter-spacing:.06em}
+.twohalves-tear-figure{display:flex;align-items:center;justify-content:center;min-width:0;min-height:0;overflow:hidden}
+.twohalves-tear-stage{position:relative;display:block;line-height:0;flex:0 1 auto;max-width:100%;filter:drop-shadow(0 20px 44px #000000aa)}
+.twohalves-sizer{display:block;max-width:100%;width:auto;height:auto;visibility:hidden;pointer-events:none;user-select:none}
+.twohalves-tear-stage>.twohalves-sizer{max-height:min(66vh,700px)}
+.twohalves-piece{
+  position:absolute;inset:0;background:#f1e9d8;will-change:clip-path,transform;
+  transition:transform .85s cubic-bezier(.16,1,.3,1);
+}
+.twohalves-piece>img{display:block;width:100%;height:100%;object-fit:fill}
+.twohalves-tear-stage[data-open=true] .twohalves-piece[data-side=first]{transform:translate(-7%,-2%) rotate(-2.4deg)}
+.twohalves-tear-stage[data-open=true] .twohalves-piece[data-side=second]{transform:translate(7%,2%) rotate(2.4deg)}
+.twohalves-tear-stage[data-axis=horizontal][data-open=true] .twohalves-piece[data-side=first]{transform:translate(-2%,-7%) rotate(-2deg)}
+.twohalves-tear-stage[data-axis=horizontal][data-open=true] .twohalves-piece[data-side=second]{transform:translate(2%,7%) rotate(2deg)}
+.twohalves-tear-stage[data-ripping=true]{animation:twohalves-tear-shake .16s steps(2,end) infinite}
+@keyframes twohalves-tear-shake{0%{transform:translate(0,0)}50%{transform:translate(1px,-1px)}100%{transform:translate(0,0)}}
+@media(prefers-reduced-motion:reduce){
+  .twohalves-piece{transition:none}
+  .twohalves-tear-stage[data-ripping=true]{animation:none}
+}
+
+/* Merge stage -------------------------------------------------------------- */
+.twohalves-merge-frame{display:flex;justify-content:center;margin:26px auto 16px;max-width:min(100%,940px)}
+.twohalves-merge{
+  position:relative;flex:0 1 auto;max-width:100%;display:block;line-height:0;
+  background:#1b1e3a;border-radius:18px;box-shadow:0 18px 48px #0005;overflow:visible;
+}
+.twohalves-merge>.twohalves-sizer{max-height:min(62vh,640px);border-radius:18px}
+.twohalves-merge-piece{position:absolute;top:0;left:0;height:100%;width:50%;object-fit:fill;will-change:transform,opacity;transform-origin:50% 50%}
+.twohalves-merge[data-axis=vertical] .twohalves-merge-piece.first{left:0}
+.twohalves-merge[data-axis=vertical] .twohalves-merge-piece.second{left:50%}
+.twohalves-merge[data-axis=horizontal] .twohalves-merge-piece{width:100%;height:50%}
+.twohalves-merge[data-axis=horizontal] .twohalves-merge-piece.first{top:0}
+.twohalves-merge[data-axis=horizontal] .twohalves-merge-piece.second{top:50%}
+.twohalves-merge-canvas,.twohalves-merge-final{position:absolute;inset:0;width:100%;height:100%;display:block;border-radius:18px}
+
+@keyframes twohalves-merge-slide-x-first{from{transform:translate(-34%,4%) rotate(-5deg);opacity:.8}to{transform:none;opacity:1}}
+@keyframes twohalves-merge-slide-x-second{from{transform:translate(34%,4%) rotate(5deg);opacity:.8}to{transform:none;opacity:1}}
+@keyframes twohalves-merge-slide-y-first{from{transform:translate(-2%,-34%) rotate(-5deg);opacity:.8}to{transform:none;opacity:1}}
+@keyframes twohalves-merge-slide-y-second{from{transform:translate(2%,34%) rotate(5deg);opacity:.8}to{transform:none;opacity:1}}
+@keyframes twohalves-merge-snap-x-first{from{transform:translate(-46%,4%) rotate(-14deg)}to{transform:none}}
+@keyframes twohalves-merge-snap-x-second{from{transform:translate(46%,4%) rotate(14deg)}to{transform:none}}
+@keyframes twohalves-merge-snap-y-first{from{transform:translate(-2%,-46%) rotate(-14deg)}to{transform:none}}
+@keyframes twohalves-merge-snap-y-second{from{transform:translate(2%,46%) rotate(14deg)}to{transform:none}}
+@keyframes twohalves-merge-fold-x-first{from{transform:perspective(1400px) rotateY(-80deg);opacity:.35}to{transform:none;opacity:1}}
+@keyframes twohalves-merge-fold-x-second{from{transform:perspective(1400px) rotateY(80deg);opacity:.35}to{transform:none;opacity:1}}
+@keyframes twohalves-merge-fold-y-first{from{transform:perspective(1400px) rotateX(80deg);opacity:.35}to{transform:none;opacity:1}}
+@keyframes twohalves-merge-fold-y-second{from{transform:perspective(1400px) rotateX(-80deg);opacity:.35}to{transform:none;opacity:1}}
+@keyframes twohalves-thud{0%,72%{transform:scale(1)}82%{transform:scale(1.025)}100%{transform:scale(1)}}
+
+.twohalves-merge[data-anim=slide][data-axis=vertical] .twohalves-merge-piece.first{animation:twohalves-merge-slide-x-first 1.1s cubic-bezier(.22,.9,.28,1) both}
+.twohalves-merge[data-anim=slide][data-axis=vertical] .twohalves-merge-piece.second{animation:twohalves-merge-slide-x-second 1.1s cubic-bezier(.22,.9,.28,1) both}
+.twohalves-merge[data-anim=slide][data-axis=horizontal] .twohalves-merge-piece.first{animation:twohalves-merge-slide-y-first 1.1s cubic-bezier(.22,.9,.28,1) both}
+.twohalves-merge[data-anim=slide][data-axis=horizontal] .twohalves-merge-piece.second{animation:twohalves-merge-slide-y-second 1.1s cubic-bezier(.22,.9,.28,1) both}
+.twohalves-merge[data-anim=snap][data-axis=vertical] .twohalves-merge-piece.first{animation:twohalves-merge-snap-x-first .85s cubic-bezier(.2,1.45,.35,1) both}
+.twohalves-merge[data-anim=snap][data-axis=vertical] .twohalves-merge-piece.second{animation:twohalves-merge-snap-x-second .85s cubic-bezier(.2,1.45,.35,1) both}
+.twohalves-merge[data-anim=snap][data-axis=horizontal] .twohalves-merge-piece.first{animation:twohalves-merge-snap-y-first .85s cubic-bezier(.2,1.45,.35,1) both}
+.twohalves-merge[data-anim=snap][data-axis=horizontal] .twohalves-merge-piece.second{animation:twohalves-merge-snap-y-second .85s cubic-bezier(.2,1.45,.35,1) both}
+.twohalves-merge[data-anim=snap]{animation:twohalves-thud .85s ease-out both}
+.twohalves-merge[data-anim=fold][data-axis=vertical] .twohalves-merge-piece.first{transform-origin:100% 50%;animation:twohalves-merge-fold-x-first .9s ease-out both}
+.twohalves-merge[data-anim=fold][data-axis=vertical] .twohalves-merge-piece.second{transform-origin:0 50%;animation:twohalves-merge-fold-x-second .9s ease-out both}
+.twohalves-merge[data-anim=fold][data-axis=horizontal] .twohalves-merge-piece.first{transform-origin:50% 100%;animation:twohalves-merge-fold-y-first .9s ease-out both}
+.twohalves-merge[data-anim=fold][data-axis=horizontal] .twohalves-merge-piece.second{transform-origin:50% 0;animation:twohalves-merge-fold-y-second .9s ease-out both}
+@media(prefers-reduced-motion:reduce){
+  .twohalves-merge-piece,.twohalves-merge{animation:none!important}
+}
+
+/* Settings chips ----------------------------------------------------------- */
+.twohalves-finish-settings{display:flex;flex-direction:column;gap:10px;align-items:center;margin:0 auto 18px;max-width:780px}
+.twohalves-setting-group{display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center}
+.twohalves-setting-group>span{font:10px ui-monospace,monospace;letter-spacing:.14em;color:#9da3cd;margin-right:4px}
+.twohalves-setting-group button{border:1px solid #33385d;background:#171a35;color:#dfe2f7;border-radius:99px;padding:8px 12px;font-size:11px;font-weight:700;cursor:pointer}
+.twohalves-setting-group button:hover{background:#272c52}
+.twohalves-setting-group button.active{background:#eceefa;color:#1b1e3a;border-color:#eceefa}
+.twohalves-seam-color{display:inline-flex;align-items:center;gap:6px;font-size:10px;color:#9da3cd}
+.twohalves-seam-color input{width:30px;height:24px;border:0;background:none;padding:0;cursor:pointer}
+
+/* Debug + cues ------------------------------------------------------------- */
+.twohalves-canvas-stack canvas.twohalves-line-art{pointer-events:none;mix-blend-mode:multiply}
+.twohalves-canvas-stack canvas.twohalves-debug-mask{
+  position:absolute;inset:0;width:100%;height:100%;z-index:5;
+  pointer-events:none;mix-blend-mode:normal;opacity:.9;
+}
+.twohalves-history button.active{background:#eceefa;color:#1b1e3a}
+.twohalves-fill-cue{
+  position:absolute;left:50%;bottom:14px;transform:translateX(-50%);z-index:7;pointer-events:none;
+  background:#2a1330;color:#ffd9e6;border:1px solid #f0659555;border-radius:99px;
+  padding:7px 14px;font-size:11px;font-weight:700;animation:twohalves-cue .7s ease both;
+}
+@keyframes twohalves-cue{0%{opacity:0;transform:translate(-50%,6px)}20%,80%{opacity:1;transform:translate(-50%,0)}100%{opacity:0}}
+
+@media(max-width:760px){
+  .twohalves-screen>.twohalves-tear{grid-template-columns:minmax(0,1fr);align-content:start;gap:16px}
+  .twohalves-tear-figure{order:1;min-height:180px}
+  .twohalves-tear-copy{order:2;max-width:none}
+  .twohalves-tear-stage>.twohalves-sizer{max-height:42vh}
+}

@@ -2,7 +2,7 @@ import { createHash, createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isReactionId, type CloudMove, type CloudSettings, type CupId, type GameId, type MatchFormat, type RoomView, type Scoreboard, type CupsSettings, type PoisonSettings, type SlapMove, type SlapSettings, type HotBombAction, type TwoHalvesView } from '@arcade/shared';
+import { isReactionId, type CloudMove, type CloudSettings, type CupId, type GameId, type MatchFormat, type RoomView, type Scoreboard, type CupsSettings, type PoisonSettings, type SlapMove, type SlapSettings, type HotBombAction, type TwoHalvesMergeStyle, type TwoHalvesSeamStyle, type TwoHalvesSettings, type TwoHalvesSplit, type TwoHalvesTear, type TwoHalvesTearStyle, type TwoHalvesView, defaultTwoHalvesSettings } from '@arcade/shared';
 import { createHangman, guess, setWord, viewFor, type HangmanGame } from './games/hangman.js';
 import { createCups, getViewFor as cupsViewFor, lockSecret, reaction as cupsReaction, submitGuess, useHint, validSettings, type CupsGame } from './games/cups.js';
 import { checkForcedLoss, createPoison, getViewFor as poisonViewFor, lockPick, pickTile, react as poisonReaction, resolveForcedLoss, tapTile, timeoutTurn, validPoisonSettings, type PoisonGame } from './games/poison.js';
@@ -12,7 +12,7 @@ import { createFamilyFeud, familyFeudView, nextFamilyFeud as advanceFamilyFeud, 
 import { chooseRps, createRpsGame, nextRpsRound, rpsView, type RpsGame } from './games/rps.js';
 import { advanceHotBomb, createHotBombGame, hotBombAction as applyHotBombAction, hotBombView, nextHotBombEventAt, nextHotBombRound, setHotBombPaused, type HotBombGame } from './games/hot-bomb.js';
 type Player = { id: string; name: string; online: boolean; socketId: string; timezone?: string; doodleId?: string };
-type TwoHalvesGame = { twoHalves: true; phase: TwoHalvesView['phase']; players: [string, string]; page?: string; halves: Record<string, string>; completed: Record<string, boolean>; paused: boolean };
+type TwoHalvesGame = { twoHalves: true; phase: TwoHalvesView['phase']; players: [string, string]; page?: string; halves: Record<string, string>; completed: Record<string, boolean>; paused: boolean; settings: TwoHalvesSettings; tear?: TwoHalvesTear };
 type Game = HangmanGame | CupsGame | PoisonGame | CloudGame | SlapCountGame | FamilyFeudGame | RpsGame | HotBombGame | TwoHalvesGame;
 type Room = { key: string; players: Player[]; game: Game | null; scoreboard: Scoreboard; sameSweetMoments: number };
 const rooms = new Map<string, Room>();
@@ -74,7 +74,7 @@ export function updatePlayerDoodle(room: Room, playerId: string, doodleId: unkno
 export function lobbyView(room: Room, self: string, error?: string): RoomView {
   const players = room.players.map(({ id, name, online, timezone, doodleId }) => ({ id, name, online, ...(timezone ? { timezone } : {}), ...(doodleId ? { doodleId } : {}) }));
   const other = room.players.find(p => p.id !== self);
-  const gameView = room.game ? 'twoHalves' in room.game ? { game: 'twohalves' as const, phase: room.game.phase, players: room.game.players, page: room.game.page, halves: room.game.phase === 'complete' ? room.game.halves : room.game.halves[self] ? { [self]: room.game.halves[self] } : {}, completed: room.game.completed, paused: room.game.paused } : 'familyFeud' in room.game ? familyFeudView(room.game, self) : 'slapCount' in room.game ? slapViewFor(room.game, self) : 'cloudGame' in room.game ? cloudViewFor(room.game, self) : 'poisonA' in room.game ? poisonViewFor(room.game, self) : 'cups' in room.game ? cupsViewFor(room.game, self) : 'rps' in room.game ? rpsView(room.game, self) : 'hotBomb' in room.game ? hotBombView(room.game, self) : viewFor(room.game, self) : null;
+  const gameView = room.game ? 'twoHalves' in room.game ? { game: 'twohalves' as const, phase: room.game.phase, players: room.game.players, page: room.game.page, halves: room.game.phase === 'complete' ? room.game.halves : room.game.halves[self] ? { [self]: room.game.halves[self] } : {}, completed: room.game.completed, paused: room.game.paused, settings: room.game.settings ?? defaultTwoHalvesSettings, ...(room.game.tear ? { tear: room.game.tear } : {}) } : 'familyFeud' in room.game ? familyFeudView(room.game, self) : 'slapCount' in room.game ? slapViewFor(room.game, self) : 'cloudGame' in room.game ? cloudViewFor(room.game, self) : 'poisonA' in room.game ? poisonViewFor(room.game, self) : 'cups' in room.game ? cupsViewFor(room.game, self) : 'rps' in room.game ? rpsView(room.game, self) : 'hotBomb' in room.game ? hotBombView(room.game, self) : viewFor(room.game, self) : null;
   return { self, players, status: !other ? 'Waiting for your person…' : other.online ? `${other.name} is here 💗` : `${other.name} disconnected, waiting for them to come back`, game: gameView, scoreboard: room.scoreboard, sameSweetMoments: room.sameSweetMoments, ...(error ? { error } : {}) };
 }
 export function startGame(room: Room, player: string, game: GameId, format: MatchFormat, cups?: Omit<CupsSettings, 'format'>, poison?: Omit<PoisonSettings, 'format'>, cloud?: CloudSettings, slapCount?: SlapSettings, familyFeud?: { rounds: number }) {
@@ -119,7 +119,7 @@ export function startGame(room: Room, player: string, game: GameId, format: Matc
     room.game = createRpsGame(player, other);
   }
   else if (game === 'hotbomb') room.game = createHotBombGame(player, other, format);
-  else if (game === 'twohalves') room.game = { twoHalves: true, phase: 'page', players: [player, other], halves: {}, completed: {}, paused: false };
+  else if (game === 'twohalves') room.game = { twoHalves: true, phase: 'page', players: [player, other], halves: {}, completed: {}, paused: false, settings: { ...defaultTwoHalvesSettings } };
   else return 'That game is coming soon.';
   return null;
 }
@@ -147,6 +147,49 @@ export function twoHalvesComplete(room: Room, player: string) {
   return null;
 }
 export function twoHalvesBack(room: Room) { if (!room.game || !('twoHalves' in room.game)) return 'Start Two Halves first.'; room.game = null; return null; }
+
+const twoHalvesSplits: TwoHalvesSplit[] = ['vertical', 'horizontal'];
+const twoHalvesTears: TwoHalvesTearStyle[] = ['rip', 'cut', 'none'];
+const twoHalvesMerges: TwoHalvesMergeStyle[] = ['slide', 'snap', 'fold', 'skip'];
+const twoHalvesSeams: TwoHalvesSeamStyle[] = ['none', 'gold', 'stitches', 'thread', 'zigzag'];
+function validJag(value: unknown): value is number[] {
+  return Array.isArray(value) && value.length >= 2 && value.length <= 80 && value.every(entry => typeof entry === 'number' && Number.isFinite(entry) && Math.abs(entry) <= 2);
+}
+export function twoHalvesSettings(room: Room, player: string, patch: unknown) {
+  const game = room.game;
+  if (!game || !('twoHalves' in game)) return 'Start Two Halves first.';
+  if ((game.phase !== 'coloring' && game.phase !== 'complete') || !game.page || !game.players.includes(player)) return 'Choose a page first.';
+  if (!patch || typeof patch !== 'object') return null;
+  const update = patch as Partial<TwoHalvesSettings>;
+  if (!game.settings) game.settings = { ...defaultTwoHalvesSettings };
+  if (update.split !== undefined) {
+    if (!twoHalvesSplits.includes(update.split)) return 'Choose a split direction.';
+    if (update.split !== game.settings.split) {
+      game.settings.split = update.split;
+      game.tear = undefined;
+      game.halves = {};
+      game.completed = {};
+    }
+  }
+  if (update.tear !== undefined && twoHalvesTears.includes(update.tear)) game.settings.tear = update.tear;
+  if (update.merge !== undefined && twoHalvesMerges.includes(update.merge)) game.settings.merge = update.merge;
+  if (update.seam !== undefined && twoHalvesSeams.includes(update.seam)) game.settings.seam = update.seam;
+  if (typeof update.seamColor === 'string' && /^#[0-9a-f]{6}$/i.test(update.seamColor)) game.settings.seamColor = update.seamColor.toLowerCase();
+  return null;
+}
+export function twoHalvesTear(room: Room, player: string, payload: unknown) {
+  const game = room.game;
+  if (!game || !('twoHalves' in game)) return 'Start Two Halves first.';
+  if (game.phase !== 'coloring' || !game.page || !game.players.includes(player)) return 'Choose a page first.';
+  if (game.tear) return null;
+  if (!game.settings) game.settings = { ...defaultTwoHalvesSettings };
+  const data = payload as { style?: unknown; jag?: unknown; jag2?: unknown };
+  if (!validJag(data.jag)) return 'That tear could not be shared.';
+  const style: TwoHalvesTearStyle = data.style === 'cut' || data.style === 'none' ? data.style : 'rip';
+  game.tear = { style, jag: data.jag, by: player, startAt: Date.now() };
+  if (validJag(data.jag2)) game.tear.jag2 = data.jag2;
+  return null;
+}
 
 export function familyFeudStart(room: Room, player: string) { return room.game && 'familyFeud' in room.game ? beginFamilyFeud(room.game, player) : 'Start Family Feud first.'; }
 function syncFamilyFeudWinner(room: Room, game: FamilyFeudGame) {

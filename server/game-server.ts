@@ -7,7 +7,7 @@ import { Server } from 'socket.io';
 import type { ClientToServerEvents, ServerToClientEvents } from '@arcade/shared';
 import type { CloudMove } from '@arcade/shared';
 import type { SlapMove } from '@arcade/shared';
-import { backToLobby, cloudMove, cupsGuess, cupsHint, cupsLock, cupsReact, disconnect, enterRoom, lobbyView, makeGuess, nextCloudRound, nextHangman, nextSlapRound, playerFor, poisonForcedLoss, poisonLock, poisonPick, poisonReact, poisonTap, poisonTimeout, nextPoisonRound, reaction, roomForSocket, setHangman, slapCompleteResolve, slapMove, slapResolveWindow, slapStartPlaying, startGame, markSlapCardVisible, updatePlayerDoodle, familyFeudStart, familyFeudSubmit, familyFeudScore, familyFeudNext, familyFeudTimeout, rpsChoose, rpsNext, hotBombAction, hotBombNext, advanceHotBombRoom, hotBombTimerAt, twoHalvesPage, twoHalvesPaint, twoHalvesComplete, twoHalvesBack } from './rooms.js';
+import { backToLobby, cloudMove, cupsGuess, cupsHint, cupsLock, cupsReact, disconnect, enterRoom, lobbyView, makeGuess, nextCloudRound, nextHangman, nextSlapRound, playerFor, poisonForcedLoss, poisonLock, poisonPick, poisonReact, poisonTap, poisonTimeout, nextPoisonRound, reaction, roomForSocket, setHangman, slapCompleteResolve, slapMove, slapResolveWindow, slapStartPlaying, startGame, markSlapCardVisible, updatePlayerDoodle, familyFeudStart, familyFeudSubmit, familyFeudScore, familyFeudNext, familyFeudTimeout, rpsChoose, rpsNext, hotBombAction, hotBombNext, advanceHotBombRoom, hotBombTimerAt, twoHalvesPage, twoHalvesPaint, twoHalvesComplete, twoHalvesBack, twoHalvesSettings, twoHalvesTear } from './rooms.js';
 import { checkForcedLoss, legalTiles } from './games/poison.js';
 import { clearLockout, completeSwap, pauseTimers, resumeTimers, timeoutCall, timeoutHunt, type CloudGame } from './games/cloud.js';
 import { completeResolve, pauseTimers as pauseSlapTimers, recordOneWayLatency, resumeTimers as resumeSlapTimers, type SlapCountGame } from './games/slapcount.js';
@@ -292,6 +292,8 @@ io.on('connection', socket => {
   socket.on('hotbomb:next', () => action((r, p) => hotBombNext(r, p)));
   socket.on('twohalves:page', ({ page }) => action((r, p) => twoHalvesPage(r, p, page)));
   socket.on('twohalves:paint', ({ image }) => action((r, p) => twoHalvesPaint(r, p, image)));
+  socket.on('twohalves:settings', patch => action((r, p) => twoHalvesSettings(r, p, patch)));
+  socket.on('twohalves:tear', payload => action((r, p) => twoHalvesTear(r, p, payload)));
   socket.on('twohalves:complete', () => action((r, p) => twoHalvesComplete(r, p)));
   socket.on('twohalves:back', () => action(r => twoHalvesBack(r)));
   socket.on('setHangmanWord', ({ word, hint }) => action((r, p) => setHangman(r, p, word, hint)));

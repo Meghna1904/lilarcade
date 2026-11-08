@@ -107,9 +107,26 @@ export type HotBombView = {
   lastEvent?: { id: number; type: 'go' | 'launched' | 'dodge' | 'feintReversed' | 'boom'; player?: string; loser?: string; mode?: 'held' | 'pass' | 'bounce' | 'feint' };
   lastReaction?: { player: string; emoji: string; at: number };
 };
+export type TwoHalvesSplit = 'vertical' | 'horizontal';
+export type TwoHalvesTearStyle = 'rip' | 'cut' | 'none';
+export type TwoHalvesMergeStyle = 'slide' | 'snap' | 'fold' | 'skip';
+export type TwoHalvesSeamStyle = 'none' | 'gold' | 'stitches' | 'thread' | 'zigzag';
+export type TwoHalvesSettings = {
+  split: TwoHalvesSplit; tear: TwoHalvesTearStyle; merge: TwoHalvesMergeStyle;
+  seam: TwoHalvesSeamStyle; seamColor: string;
+};
+export const defaultTwoHalvesSettings: TwoHalvesSettings = {
+  split: 'vertical', tear: 'rip', merge: 'slide', seam: 'gold', seamColor: '#d6336c',
+};
+export type TwoHalvesStroke = {
+  tool: 'pencil' | 'marker' | 'crayon' | 'pastel' | 'watercolor' | 'brush' | 'glitter' | 'eraser';
+  color: string; size: number; alpha: number; points: Array<{ x: number; y: number }>;
+};
+export type TwoHalvesTear = { style: TwoHalvesTearStyle; jag: number[]; jag2?: number[]; by: string; startAt: number };
 export type TwoHalvesView = {
   game: 'twohalves'; phase: 'page' | 'coloring' | 'complete'; players: [string, string];
   page?: string; halves: Record<string, string>; completed: Record<string, boolean>; paused: boolean;
+  settings: TwoHalvesSettings; tear?: TwoHalvesTear;
   lastReaction?: { player: string; emoji: string; at: number };
 };
 export type PoisonMove =
@@ -145,6 +162,10 @@ export type ClientToServerEvents = {
   'hotbomb:next': () => void;
   'twohalves:page': (payload: { page: string }) => void;
   'twohalves:paint': (payload: { image: string }) => void;
+  'twohalves:settings': (patch: Partial<TwoHalvesSettings>) => void;
+  'twohalves:tear': (payload: { style: TwoHalvesTearStyle; jag: number[]; jag2: number[] }) => void;
+  'twohalves:stroke': (stroke: TwoHalvesStroke) => void;
+  'twohalves:fill': (payload: { id: string; seq: number; x: number; y: number; color: string }) => void;
   'twohalves:complete': () => void;
   'twohalves:back': () => void;
   'familyfeud:start': () => void;
