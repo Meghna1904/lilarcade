@@ -1165,7 +1165,7 @@ export function TwoHalvesGame({ game, self, players, socket }: Props) {
             <button type="button" onClick={() => applyZoomAt(clampZoom(userZoom / 1.5), centreAnchor())} aria-label="Zoom out">−</button>
             <output aria-live="polite" aria-label="Zoom level">{displayPercent}</output>
             <button type="button" onClick={() => applyZoomAt(clampZoom(userZoom * 1.5), centreAnchor())} aria-label="Zoom in">+</button>
-            <button type="button" onClick={() => resetView}>Fit</button>
+            <button type="button" onClick={resetView}>Fit</button>
             <button type="button" onClick={actualSize}>100%</button>
           </div>
           <button type="button" onClick={undo} disabled={historyIndex.current <= 0 || myDone}>↶ Undo</button>
