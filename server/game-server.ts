@@ -7,7 +7,7 @@ import { Server } from 'socket.io';
 import type { ClientToServerEvents, ServerToClientEvents } from '@arcade/shared';
 import type { CloudMove } from '@arcade/shared';
 import type { SlapMove } from '@arcade/shared';
-import { backToLobby, cloudMove, cupsGuess, cupsHint, cupsLock, cupsReact, disconnect, enterRoom, lobbyView, makeGuess, nextCloudRound, nextHangman, nextSlapRound, playerFor, poisonForcedLoss, poisonLock, poisonPick, poisonReact, poisonTap, poisonTimeout, nextPoisonRound, reaction, roomForSocket, setHangman, slapCompleteResolve, slapMove, slapResolveWindow, slapStartPlaying, startGame, markSlapCardVisible, updatePlayerDoodle, familyFeudStart, familyFeudSubmit, familyFeudScore, familyFeudNext, familyFeudTimeout, rpsChoose, rpsNext, hotBombAction, hotBombNext, advanceHotBombRoom, hotBombTimerAt, twoHalvesPage, twoHalvesPaint, twoHalvesComplete, twoHalvesBack, twoHalvesSettings, twoHalvesTear } from './rooms.js';
+import { backToLobby, cloudMove, cupsGuess, cupsHint, cupsLock, cupsReact, disconnect, enterRoom, lobbyView, makeGuess, nextCloudRound, nextHangman, nextSlapRound, playerFor, poisonForcedLoss, poisonLock, poisonPick, poisonReact, poisonTap, poisonTimeout, nextPoisonRound, reaction, roomForSocket, setHangman, slapCompleteResolve, slapMove, slapResolveWindow, slapStartPlaying, startGame, markSlapCardVisible, updatePlayerDoodle, familyFeudStart, familyFeudSubmit, familyFeudScore, familyFeudNext, familyFeudTimeout, rpsChoose, rpsNext, hotBombAction, hotBombNext, advanceHotBombRoom, hotBombTimerAt, twoHalvesPage, twoHalvesPaint, twoHalvesComplete, twoHalvesBack, twoHalvesSettings, twoHalvesTear, twoHalvesSide, leaveRoom } from './rooms.js';
 import { checkForcedLoss, legalTiles } from './games/poison.js';
 import { clearLockout, completeSwap, pauseTimers, resumeTimers, timeoutCall, timeoutHunt, type CloudGame } from './games/cloud.js';
 import { completeResolve, pauseTimers as pauseSlapTimers, recordOneWayLatency, resumeTimers as resumeSlapTimers, type SlapCountGame } from './games/slapcount.js';
@@ -49,6 +49,14 @@ const slapTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const pendingSlapPings = new Map<string, Map<number, number>>();
 const familyFeudTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const hotBombTimers = new Map<string, ReturnType<typeof setTimeout>>();
+function clearRoomTimers(key: string) {
+  for (const timers of [poisonTimers, cloudTimers, cloudPublishTimers, slapTimers, familyFeudTimers, hotBombTimers]) {
+    const timer = timers.get(key);
+    if (timer) clearTimeout(timer);
+    timers.delete(key);
+  }
+  cloudPublishTimes.delete(key);
+}
 function scheduleHotBombTimer(room: NonNullable<ReturnType<typeof roomForSocket>>) {
   const old = hotBombTimers.get(room.key);
   if (old) clearTimeout(old);
@@ -281,7 +289,7 @@ io.on('connection', socket => {
     handleCloud(room, player.id, move, ack);
   };
 
-  socket.on('startGame', ({ game, format, cups, poison, cloud, slapCount, familyFeud }) => action((r, p) => startGame(r, p, game, format, cups, poison, cloud, slapCount, familyFeud)));
+  socket.on('startGame', ({ game, format, cups, poison, cloud, slapCount, familyFeud, solo }) => action((r, p) => startGame(r, p, game, format, cups, poison, cloud, slapCount, familyFeud, solo)));
   socket.on('familyfeud:start', () => action((r, p) => familyFeudStart(r, p)));
   socket.on('familyfeud:submit', ({ answer }) => action((r, p) => familyFeudSubmit(r, p, answer)));
   socket.on('familyfeud:score', ({ target, matchIndex, points }) => action((r, p) => familyFeudScore(r, p, target, matchIndex, points)));
@@ -291,10 +299,11 @@ io.on('connection', socket => {
   socket.on('hotbomb:action', ({ action: move }) => action((r, p) => hotBombAction(r, p, move)));
   socket.on('hotbomb:next', () => action((r, p) => hotBombNext(r, p)));
   socket.on('twohalves:page', ({ page }) => action((r, p) => twoHalvesPage(r, p, page)));
-  socket.on('twohalves:paint', ({ image }) => action((r, p) => twoHalvesPaint(r, p, image)));
+  socket.on('twohalves:paint', ({ image, side }) => action((r, p) => twoHalvesPaint(r, p, image, side)));
+  socket.on('twohalves:side', ({ side }) => action((r, p) => twoHalvesSide(r, p, side)));
   socket.on('twohalves:settings', patch => action((r, p) => twoHalvesSettings(r, p, patch)));
   socket.on('twohalves:tear', payload => action((r, p) => twoHalvesTear(r, p, payload)));
-  socket.on('twohalves:complete', () => action((r, p) => twoHalvesComplete(r, p)));
+  socket.on('twohalves:complete', payload => action((r, p) => twoHalvesComplete(r, p, payload?.side)));
   socket.on('twohalves:back', () => action(r => twoHalvesBack(r)));
   socket.on('setHangmanWord', ({ word, hint }) => action((r, p) => setHangman(r, p, word, hint)));
   socket.on('guessLetter', ({ letter }) => action((r, p) => makeGuess(r, p, letter)));
@@ -354,6 +363,17 @@ io.on('connection', socket => {
   socket.on('slap:nextRound', () => action((r,p) => nextSlapRound(r,p)));
   socket.on('slap:backToLobby', () => action(r => backToLobby(r)));
   socket.on('backToLobby', () => action(r => backToLobby(r)));
+  socket.on('leaveRoom', () => {
+    const room = roomForSocket(socket.id);
+    const player = room && playerFor(room, socket.id);
+    if (!room || !player) return;
+    const name = player.name;
+    clearRoomTimers(room.key);
+    const remaining = leaveRoom(room, player.id);
+    if (!remaining) return;
+    publish(remaining);
+    for (const p of remaining.players) if (p.online) io.to(p.socketId).emit('actionError', `${name} left the room.`);
+  });
   socket.on('disconnect', () => {
     pendingSlapPings.delete(socket.id);
     const room = disconnect(socket.id);

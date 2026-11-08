@@ -12,7 +12,7 @@ import { createFamilyFeud, familyFeudView, nextFamilyFeud as advanceFamilyFeud, 
 import { chooseRps, createRpsGame, nextRpsRound, rpsView, type RpsGame } from './games/rps.js';
 import { advanceHotBomb, createHotBombGame, hotBombAction as applyHotBombAction, hotBombView, nextHotBombEventAt, nextHotBombRound, setHotBombPaused, type HotBombGame } from './games/hot-bomb.js';
 type Player = { id: string; name: string; online: boolean; socketId: string; timezone?: string; doodleId?: string };
-type TwoHalvesGame = { twoHalves: true; phase: TwoHalvesView['phase']; players: [string, string]; page?: string; halves: Record<string, string>; completed: Record<string, boolean>; paused: boolean; settings: TwoHalvesSettings; tear?: TwoHalvesTear };
+type TwoHalvesGame = { twoHalves: true; phase: TwoHalvesView['phase']; players: [string, string]; page?: string; halves: Record<string, string>; completed: Record<string, boolean>; paused: boolean; settings: TwoHalvesSettings; tear?: TwoHalvesTear; solo: boolean; activeSide: 0 | 1 };
 type Game = HangmanGame | CupsGame | PoisonGame | CloudGame | SlapCountGame | FamilyFeudGame | RpsGame | HotBombGame | TwoHalvesGame;
 type Room = { key: string; players: Player[]; game: Game | null; scoreboard: Scoreboard; sameSweetMoments: number };
 const rooms = new Map<string, Room>();
@@ -63,6 +63,14 @@ export function disconnect(socketId: string) {
     if (p) { p.online = false; if (room.game) { if ('hotBomb' in room.game) setHotBombPaused(room.game, true); else room.game.paused = true; } return room; }
   }
 }
+export function leaveRoom(room: Room, player: string) {
+  const index = room.players.findIndex(candidate => candidate.id === player);
+  if (index === -1) return null;
+  room.players.splice(index, 1);
+  room.game = null;
+  if (!room.players.length) { rooms.delete(room.key); return null; }
+  return room;
+}
 export function roomForSocket(socketId: string) { return [...rooms.values()].find(r => r.players.some(p => p.socketId === socketId)); }
 export function playerFor(room: Room, socketId: string) { return room.players.find(p => p.socketId === socketId); }
 export function updatePlayerDoodle(room: Room, playerId: string, doodleId: unknown): boolean {
@@ -74,13 +82,15 @@ export function updatePlayerDoodle(room: Room, playerId: string, doodleId: unkno
 export function lobbyView(room: Room, self: string, error?: string): RoomView {
   const players = room.players.map(({ id, name, online, timezone, doodleId }) => ({ id, name, online, ...(timezone ? { timezone } : {}), ...(doodleId ? { doodleId } : {}) }));
   const other = room.players.find(p => p.id !== self);
-  const gameView = room.game ? 'twoHalves' in room.game ? { game: 'twohalves' as const, phase: room.game.phase, players: room.game.players, page: room.game.page, halves: room.game.phase === 'complete' ? room.game.halves : room.game.halves[self] ? { [self]: room.game.halves[self] } : {}, completed: room.game.completed, paused: room.game.paused, settings: room.game.settings ?? defaultTwoHalvesSettings, ...(room.game.tear ? { tear: room.game.tear } : {}) } : 'familyFeud' in room.game ? familyFeudView(room.game, self) : 'slapCount' in room.game ? slapViewFor(room.game, self) : 'cloudGame' in room.game ? cloudViewFor(room.game, self) : 'poisonA' in room.game ? poisonViewFor(room.game, self) : 'cups' in room.game ? cupsViewFor(room.game, self) : 'rps' in room.game ? rpsView(room.game, self) : 'hotBomb' in room.game ? hotBombView(room.game, self) : viewFor(room.game, self) : null;
+  const gameView = room.game ? 'twoHalves' in room.game ? { game: 'twohalves' as const, phase: room.game.phase, players: room.game.players, page: room.game.page, halves: room.game.phase === 'complete' || room.game.solo ? room.game.halves : room.game.halves[self] ? { [self]: room.game.halves[self] } : {}, completed: room.game.completed, paused: room.game.paused, settings: room.game.settings ?? defaultTwoHalvesSettings, ...(room.game.solo ? { solo: true, activeSide: room.game.activeSide } : {}), ...(room.game.tear ? { tear: room.game.tear } : {}) } : 'familyFeud' in room.game ? familyFeudView(room.game, self) : 'slapCount' in room.game ? slapViewFor(room.game, self) : 'cloudGame' in room.game ? cloudViewFor(room.game, self) : 'poisonA' in room.game ? poisonViewFor(room.game, self) : 'cups' in room.game ? cupsViewFor(room.game, self) : 'rps' in room.game ? rpsView(room.game, self) : 'hotBomb' in room.game ? hotBombView(room.game, self) : viewFor(room.game, self) : null;
   return { self, players, status: !other ? 'Waiting for your person…' : other.online ? `${other.name} is here 💗` : `${other.name} disconnected, waiting for them to come back`, game: gameView, scoreboard: room.scoreboard, sameSweetMoments: room.sameSweetMoments, ...(error ? { error } : {}) };
 }
-export function startGame(room: Room, player: string, game: GameId, format: MatchFormat, cups?: Omit<CupsSettings, 'format'>, poison?: Omit<PoisonSettings, 'format'>, cloud?: CloudSettings, slapCount?: SlapSettings, familyFeud?: { rounds: number }) {
-  if (room.players.length !== 2 || room.players.some(p => !p.online)) return 'Wait until both of you are here.';
+export function startGame(room: Room, player: string, game: GameId, format: MatchFormat, cups?: Omit<CupsSettings, 'format'>, poison?: Omit<PoisonSettings, 'format'>, cloud?: CloudSettings, slapCount?: SlapSettings, familyFeud?: { rounds: number }, twoHalvesSolo?: boolean) {
+  // Dev-only alone mode: one online player can open Two Halves and paint both halves.
+  const solo = game === 'twohalves' && twoHalvesSolo === true && room.players.length === 1 && room.players[0].online && process.env.NODE_ENV !== 'production';
+  if (!solo && (room.players.length !== 2 || room.players.some(p => !p.online))) return 'Wait until both of you are here.';
   if (room.game && room.game.phase !== 'matchOver') return 'A game is already in progress.';
-  const other = room.players.find(p => p.id !== player)!.id;
+  const other = room.players.find(p => p.id !== player)?.id ?? `${player}:solo`;
   if (game === 'hangman') room.game = createHangman(player, other, format);
   else if (game === 'cups') {
     const settings = { cupCount: cups?.cupCount ?? 5, maxGuesses: cups?.maxGuesses ?? 8, hintEnabled: cups?.hintEnabled ?? false, format };
@@ -119,7 +129,7 @@ export function startGame(room: Room, player: string, game: GameId, format: Matc
     room.game = createRpsGame(player, other);
   }
   else if (game === 'hotbomb') room.game = createHotBombGame(player, other, format);
-  else if (game === 'twohalves') room.game = { twoHalves: true, phase: 'page', players: [player, other], halves: {}, completed: {}, paused: false, settings: { ...defaultTwoHalvesSettings } };
+  else if (game === 'twohalves') room.game = { twoHalves: true, phase: 'page', players: [player, solo ? `${player}:solo` : other], halves: {}, completed: {}, paused: false, settings: { ...defaultTwoHalvesSettings }, solo, activeSide: 0 };
   else return 'That game is coming soon.';
   return null;
 }
@@ -131,19 +141,38 @@ export function twoHalvesPage(room: Room, player: string, page: unknown) {
   if (typeof page !== 'string' || page.length > 330_000 || !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(page)) return 'Choose an image smaller than 240 KB after resizing.';
   game.page = page; game.phase = 'coloring'; return null;
 }
-export function twoHalvesPaint(room: Room, player: string, image: unknown) {
+function twoHalvesSeat(game: TwoHalvesGame, player: string, side?: unknown): 0 | 1 {
+  if (game.solo) return side === 1 ? 1 : 0;
+  return game.players[0] === player ? 0 : 1;
+}
+export function twoHalvesPaint(room: Room, player: string, image: unknown, side?: unknown) {
   const game = room.game;
   if (!game || !('twoHalves' in game)) return 'Start Two Halves first.';
-  if (game.phase !== 'coloring' || !game.page || !game.players.includes(player) || game.completed[player]) return 'Your half is locked.';
+  const seat = twoHalvesSeat(game, player, side);
+  if (game.solo && seat !== game.activeSide) return 'Open that half first.';
+  const seatId = game.players[seat];
+  if (game.phase !== 'coloring' || !game.page || !game.players.includes(player) || game.completed[seatId]) return 'Your half is locked.';
   if (typeof image !== 'string' || image.length > 250_000 || !/^data:image\/(png|webp);base64,[A-Za-z0-9+/=]+$/.test(image)) return 'Your painted half is too large. Try a smaller brush stroke.';
-  game.halves[player] = image; return null;
+  game.halves[seatId] = image; return null;
 }
-export function twoHalvesComplete(room: Room, player: string) {
+export function twoHalvesComplete(room: Room, player: string, side?: unknown) {
   const game = room.game;
   if (!game || !('twoHalves' in game)) return 'Start Two Halves first.';
   if (game.phase !== 'coloring' || !game.page || !game.players.includes(player)) return 'Choose a page first.';
-  game.completed[player] = true;
-  if (game.players.every(id => game.completed[id])) game.phase = 'complete';
+  const seat = twoHalvesSeat(game, player, side);
+  if (game.solo && seat !== game.activeSide) return 'Open that half first.';
+  game.completed[game.players[seat]] = true;
+  if (game.players.every(id => game.completed[id])) { game.phase = 'complete'; game.activeSide = 0; }
+  return null;
+}
+export function twoHalvesSide(room: Room, player: string, side: unknown) {
+  const game = room.game;
+  if (!game || !('twoHalves' in game)) return 'Start Two Halves first.';
+  if (!game.solo) return 'Only a solo preview can switch halves.';
+  if (game.phase !== 'coloring' || !game.page || !game.players.includes(player)) return 'Choose a page first.';
+  if (side !== 0 && side !== 1) return 'Choose a half.';
+  if (game.completed[game.players[side]]) return 'That half is already finished.';
+  game.activeSide = side;
   return null;
 }
 export function twoHalvesBack(room: Room) { if (!room.game || !('twoHalves' in room.game)) return 'Start Two Halves first.'; room.game = null; return null; }

@@ -84,7 +84,9 @@ function star(context: CanvasRenderingContext2D, x: number, y: number, r: number
   for (let i = 0; i < 8; i++) { const radius = i % 2 ? r * .25 : r; const angle = i * Math.PI / 4 - Math.PI / 2; const px = x + Math.cos(angle) * radius; const py = y + Math.sin(angle) * radius; if (!i) context.moveTo(px, py); else context.lineTo(px, py); }
   context.closePath(); context.fill();
 }
-const MAX_PAGE_SIDE = 1600;
+const MAX_PAGE_WIDTH = 1200;
+const MAX_PAGE_HEIGHT = 900;
+const MAX_PAGE_CHARS = 320_000;
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const DEFAULT_COLOR = palettes.Pencils[6];
 const FILL_EXPAND = 2;
@@ -318,11 +320,14 @@ export function TwoHalvesGame({ game, self, players, socket }: Props) {
   const mergeTimer = useRef(0);
   const finalUrlRef = useRef('');
   const [, setHistoryVersion] = useState(0);
+  const solo = Boolean(game.solo);
   const mySide = game.players[0] === self ? 0 : 1;
-  const partnerId = game.players[1 - mySide];
+  const activeSide = solo ? (game.activeSide ?? 0) : mySide;
+  const seatId = game.players[activeSide];
+  const partnerId = game.players[1 - activeSide];
   const me = players.find(player => player.id === self);
   const partner = players.find(player => player.id === partnerId);
-  const myDone = Boolean(game.completed[self]);
+  const myDone = Boolean(game.completed[seatId]);
   const partnerDone = Boolean(game.completed[partnerId]);
   const alpha = brushAlpha(tool, strength);
   const eyeDropper = typeof window === 'undefined' ? undefined : (window as unknown as { EyeDropper?: new () => { open: () => Promise<{ sRGBHex: string }> } }).EyeDropper;
@@ -447,7 +452,7 @@ export function TwoHalvesGame({ game, self, players, socket }: Props) {
   };
   const syncPaint = () => {
     const canvas = paintRef.current;
-    if (canvas) socket.emit('twohalves:paint', { image: smallSnapshot(canvas, 0.8) });
+    if (canvas) socket.emit('twohalves:paint', { image: smallSnapshot(canvas, 0.8), side: activeSide });
   };
   const setFromHistory = (index: number) => {
     const canvas = paintRef.current;
@@ -561,7 +566,7 @@ export function TwoHalvesGame({ game, self, players, socket }: Props) {
     setReady(false);
     void Promise.all([
       imageFrom(game.page),
-      game.halves[self] ? imageFrom(game.halves[self]) : Promise.resolve(null),
+      game.halves[seatId] ? imageFrom(game.halves[seatId]) : Promise.resolve(null),
     ]).then(([loadedPage, saved]) => {
       const paint = paintRef.current;
       const art = artRef.current;
@@ -569,8 +574,8 @@ export function TwoHalvesGame({ game, self, players, socket }: Props) {
       const vertical = splitRef.current === 'vertical';
       const halfWidth = vertical ? Math.max(2, Math.round(loadedPage.width / 2)) : loadedPage.width;
       const halfHeight = vertical ? loadedPage.height : Math.max(2, Math.round(loadedPage.height / 2));
-      const sourceX = vertical ? (mySide === 0 ? 0 : loadedPage.width - halfWidth) : 0;
-      const sourceY = vertical ? 0 : (mySide === 0 ? 0 : loadedPage.height - halfHeight);
+      const sourceX = vertical ? (activeSide === 0 ? 0 : loadedPage.width - halfWidth) : 0;
+      const sourceY = vertical ? 0 : (activeSide === 0 ? 0 : loadedPage.height - halfHeight);
       paint.width = art.width = halfWidth;
       paint.height = art.height = halfHeight;
       const paintContext = paint.getContext('2d');
@@ -599,10 +604,10 @@ export function TwoHalvesGame({ game, self, players, socket }: Props) {
       setPageDims({ w: halfWidth, h: halfHeight });
       setHistoryVersion(value => value + 1);
       setReady(true);
-      if (!saved) socket.emit('twohalves:paint', { image: smallSnapshot(paint, 0.8) });
+      if (!saved) socket.emit('twohalves:paint', { image: smallSnapshot(paint, 0.8), side: activeSide });
     }).catch(() => {});
     return () => { live = false; };
-  }, [game.page, game.phase, mySide, self, socket, split, stage]);
+  }, [game.page, game.phase, activeSide, self, socket, split, stage]);
 
   useEffect(() => {
     if (!DEBUG) return;
@@ -883,18 +888,26 @@ export function TwoHalvesGame({ game, self, players, socket }: Props) {
         if (file.size > MAX_UPLOAD_BYTES) { setError('That picture is larger than 10 MB. Please choose a smaller one.'); return; }
       }
       const loaded = file ? await loadImageSource(file) : { source: await imageFrom(samplePage), width: 1040, height: 720 };
-      const downscale = Math.min(1, MAX_PAGE_SIDE / Math.max(loaded.width, loaded.height));
-      let width = Math.max(2, Math.round(loaded.width * downscale));
-      if (width % 2) width += 1;
-      const height = Math.max(2, Math.round(loaded.height * downscale));
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      canvas.getContext('2d')?.drawImage(loaded.source, 0, 0, width, height);
-      let quality = 0.78;
-      let data = canvas.toDataURL('image/jpeg', quality);
-      while (data.length > 320_000 && quality > 0.35) { quality -= 0.08; data = canvas.toDataURL('image/jpeg', quality); }
-      if (data.length > 320_000) { setError('This picture is too detailed to share. Please choose a simpler or smaller image.'); return; }
+      let scale = Math.min(1, MAX_PAGE_WIDTH / loaded.width, MAX_PAGE_HEIGHT / loaded.height);
+      let data = '';
+      // Very detailed photos cannot reach the page cap at full size, so shrink and
+      // retry instead of refusing the upload. This keeps every page under the
+      // socket payload limit while preserving the old working dimensions.
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        let width = Math.max(2, Math.round(loaded.width * scale));
+        if (width % 2) width += 1;
+        const height = Math.max(2, Math.round(loaded.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext('2d')?.drawImage(loaded.source, 0, 0, width, height);
+        let quality = 0.78;
+        data = canvas.toDataURL('image/jpeg', quality);
+        while (data.length > MAX_PAGE_CHARS && quality > 0.35) { quality -= 0.08; data = canvas.toDataURL('image/jpeg', quality); }
+        if (data.length <= MAX_PAGE_CHARS) break;
+        scale *= 0.75;
+      }
+      if (data.length > MAX_PAGE_CHARS) { setError('This picture is too detailed to share. Please choose a simpler or smaller image.'); return; }
       socket.emit('twohalves:page', { page: data });
     } catch { setError('That image could not be opened. Try a PNG or JPG.'); }
     finally { setBusy(false); }
@@ -1115,7 +1128,7 @@ export function TwoHalvesGame({ game, self, players, socket }: Props) {
     {game.phase === 'coloring' && stage === 'color' && game.page && <main className="twohalves-studio" data-mode={mode} ref={workspaceRef}>
       <nav className="twohalves-toolrail" aria-label="Drawing tools">{toolList.map(item => <button type="button" key={item.id} className={tool === item.id ? 'active' : ''} aria-label={item.label} title={item.label} aria-pressed={tool === item.id} onClick={() => { setTool(item.id); setPaletteOpen(false); }}><span>{item.icon}</span>{item.label}</button>)}</nav>
       <div className="twohalves-canvas-column">
-        <div className="twohalves-studio-heading"><div><span className="twohalves-kicker">YOUR HALF · {me?.name ?? 'YOU'}</span><h1>{myDone ? 'Your half is ready!' : 'Make it yours.'}</h1></div><p>{partnerDone ? `${partner?.name ?? 'Your person'} finished their half ✦` : 'Your person is making the other half.'}</p><div className="twohalves-doodle-pair" aria-label="Players coloring together"><div className="twohalves-doodle-player"><GameDoodle id={playerDoodleId(players, me)} expression={myDone ? 'celebrating' : 'happy'} playing={!myDone} seed={`${self}:${myDone}`} size={54} name={me?.name} /><span>{me?.name ?? 'You'}</span></div><span className="twohalves-doodle-heart" aria-hidden="true">♡</span><div className="twohalves-doodle-player"><GameDoodle id={playerDoodleId(players, partner)} expression={partnerDone ? 'celebrating' : 'thinking'} playing={!partnerDone} seed={`${partnerId}:${partnerDone}`} size={54} flip name={partner?.name} /><span>{partner?.name ?? 'Your person'}</span></div></div></div>
+        <div className="twohalves-studio-heading"><div><span className="twohalves-kicker">{solo ? (activeSide === 0 ? 'FIRST HALF' : 'SECOND HALF') : 'YOUR HALF'} · {me?.name ?? 'YOU'}</span><h1>{myDone ? 'Your half is ready!' : 'Make it yours.'}</h1></div><p>{partnerDone ? (solo ? 'The other half is finished ✦' : `${partner?.name ?? 'Your person'} finished their half ✦`) : solo ? 'Finish this half, then paint the other one.' : 'Your person is making the other half.'}</p><div className="twohalves-doodle-pair" aria-label="Players coloring together"><div className="twohalves-doodle-player"><GameDoodle id={playerDoodleId(players, me)} expression={myDone ? 'celebrating' : 'happy'} playing={!myDone} seed={`${self}:${myDone}`} size={54} name={me?.name} /><span>{me?.name ?? 'You'}</span></div><span className="twohalves-doodle-heart" aria-hidden="true">♡</span><div className="twohalves-doodle-player"><GameDoodle id={playerDoodleId(players, partner)} expression={partnerDone ? 'celebrating' : 'thinking'} playing={!partnerDone} seed={`${partnerId}:${partnerDone}`} size={54} flip name={partner?.name} /><span>{partner?.name ?? 'Your person'}</span></div></div></div>
         <div
           className="twohalves-canvas-viewport"
           ref={viewportRef}
@@ -1160,7 +1173,8 @@ export function TwoHalvesGame({ game, self, players, socket }: Props) {
           <button type="button" onClick={clearHalf} disabled={!ready || myDone}>Clear</button>
           {DEBUG && <button type="button" className={showMask ? 'active' : ''} aria-pressed={showMask} onClick={() => setShowMask(value => !value)}>Mask</button>}
           {mode === 'narrow' && <button type="button" className="twohalves-color-trigger" onClick={() => setPaletteOpen(true)}><span style={{ backgroundColor: color }} aria-hidden="true" />Color</button>}
-          <button className="twohalves-done-button" disabled={!ready || game.paused || myDone} onClick={() => socket.emit('twohalves:complete')}>{myDone ? 'Half finished ✓' : 'Finish my half →'}</button>
+          {solo && myDone && !partnerDone && <button type="button" className="twohalves-switch-half" onClick={() => socket.emit('twohalves:side', { side: activeSide === 0 ? 1 : 0 })}>Paint the other half →</button>}
+          <button className="twohalves-done-button" disabled={!ready || game.paused || myDone} onClick={() => socket.emit('twohalves:complete', { side: activeSide })}>{myDone ? 'Half finished ✓' : 'Finish my half →'}</button>
         </div>
       </div>
       {mode === 'narrow' && paletteOpen && <button type="button" className="twohalves-drawer-backdrop" aria-label="Close colors" onClick={() => setPaletteOpen(false)} />}

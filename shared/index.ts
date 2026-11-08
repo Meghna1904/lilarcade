@@ -126,7 +126,7 @@ export type TwoHalvesTear = { style: TwoHalvesTearStyle; jag: number[]; jag2?: n
 export type TwoHalvesView = {
   game: 'twohalves'; phase: 'page' | 'coloring' | 'complete'; players: [string, string];
   page?: string; halves: Record<string, string>; completed: Record<string, boolean>; paused: boolean;
-  settings: TwoHalvesSettings; tear?: TwoHalvesTear;
+  settings: TwoHalvesSettings; tear?: TwoHalvesTear; solo?: boolean; activeSide?: 0 | 1;
   lastReaction?: { player: string; emoji: string; at: number };
 };
 export type PoisonMove =
@@ -155,18 +155,19 @@ export type RoomView = {
 export type ClientToServerEvents = {
   enter: (payload: { name: string; passcode: string; token: string; timezone?: string; doodleId?: string; shareSky?: boolean }) => void;
   'doodle:select': (payload: { doodleId: string }) => void;
-  startGame: (payload: { game: GameId; format: MatchFormat; cups?: Omit<CupsSettings, 'format'>; poison?: Omit<PoisonSettings, 'format'>; cloud?: CloudSettings; slapCount?: SlapSettings; familyFeud?: { rounds: number } }) => void;
+  startGame: (payload: { game: GameId; format: MatchFormat; cups?: Omit<CupsSettings, 'format'>; poison?: Omit<PoisonSettings, 'format'>; cloud?: CloudSettings; slapCount?: SlapSettings; familyFeud?: { rounds: number }; solo?: boolean }) => void;
   'rps:choose': (payload: { choice: RpsChoice }) => void;
   'rps:next': () => void;
   'hotbomb:action': (payload: { action: HotBombAction }) => void;
   'hotbomb:next': () => void;
   'twohalves:page': (payload: { page: string }) => void;
-  'twohalves:paint': (payload: { image: string }) => void;
+  'twohalves:paint': (payload: { image: string; side?: 0 | 1 }) => void;
+  'twohalves:side': (payload: { side: 0 | 1 }) => void;
   'twohalves:settings': (patch: Partial<TwoHalvesSettings>) => void;
   'twohalves:tear': (payload: { style: TwoHalvesTearStyle; jag: number[]; jag2: number[] }) => void;
   'twohalves:stroke': (stroke: TwoHalvesStroke) => void;
   'twohalves:fill': (payload: { id: string; seq: number; x: number; y: number; color: string }) => void;
-  'twohalves:complete': () => void;
+  'twohalves:complete': (payload?: { side?: 0 | 1 }) => void;
   'twohalves:back': () => void;
   'familyfeud:start': () => void;
   'familyfeud:submit': (payload: { answer: string }) => void;
@@ -201,6 +202,7 @@ export type ClientToServerEvents = {
   'cloud:nextRound': () => void;
   'cloud:backToLobby': () => void;
   backToLobby: () => void;
+  leaveRoom: () => void;
 };
 export type ServerToClientEvents = {
   roomState: (state: RoomView) => void; joinError: (message: string) => void; actionError: (message: string) => void;

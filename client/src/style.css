@@ -23,3 +23,9 @@
 .sweet-tie-labels>span:first-child{animation:sweet-tie-split-left .42s ease-out .9s both}.sweet-tie-labels>span:last-child{animation:sweet-tie-split-right .42s ease-out .9s both}.sweet-tie-labels>i{animation:sweet-tie-heart .42s cubic-bezier(.2,.9,.2,1.3) 1s both}@keyframes sweet-tie-split-left{from{opacity:0;transform:translateX(9px)}to{opacity:1;transform:translateX(0)}}@keyframes sweet-tie-split-right{from{opacity:0;transform:translateX(-9px)}to{opacity:1;transform:translateX(0)}}@keyframes sweet-tie-heart{from{opacity:0;transform:scale(.3)}to{opacity:1;transform:scale(1)}}@media(prefers-reduced-motion:reduce){.sweet-tie-labels>span,.sweet-tie-labels>i{animation:sweet-tie-fade .2s ease-out .2s both}}
 
 :root{--game-shell-inset:clamp(10px,2vw,28px);--game-layout-gap:clamp(8px,1.5vw,16px);--game-rail-min:9rem;--game-main-max:64rem}
+.solo-preview-link{width:100%;margin-top:8px;padding:6px;border:0;background:none;color:var(--butter);font:500 11px var(--display);cursor:pointer}
+.solo-preview-link b{color:var(--rose)}
+.solo-preview-link:hover b{color:var(--butter)}
+.solo-preview-note{margin-top:2px;color:#aaa0b0;font-size:10px;line-height:1.4;text-align:center}
+.solo-lobby-button{display:block;margin:7px auto 0;padding:7px 12px;border:1px dashed #ffd98a66;border-radius:999px;background:#211d31;color:var(--butter);font:500 11px var(--display);cursor:pointer}
+.solo-lobby-button:hover{border-color:var(--butter)}

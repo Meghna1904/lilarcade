@@ -31,7 +31,13 @@ import './components/games/rps/rps.css';
 import './components/games/hot-bomb/hot-bomb.css';
 
 type ArcadeSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
-const tokenKey = 'little-arcade-device';
+// A second tab can take the other seat with ?player=2. Normal visits keep one
+// stable device identity, so reconnects still resume the same player.
+const deviceSlot = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('player') === '2' ? '-two' : '';
+const tokenKey = `little-arcade-device${deviceSlot}`;
+const nameKey = `little-arcade-name${deviceSlot}`;
+// Dev-only alone mode: ?solo=1 starts Two Halves with one player so both halves can be painted.
+const soloPreview = import.meta.env.DEV && new URLSearchParams(window.location.search).get('solo') === '1';
 const makeToken = () => {
   const old = localStorage.getItem(tokenKey); if (old) return old;
   const token = crypto.randomUUID(); localStorage.setItem(tokenKey, token); return token;
@@ -57,7 +63,8 @@ export default function App() {
     return io(import.meta.env.VITE_SERVER_URL || undefined);
   }, []);
   const [token] = useState(makeToken);
-  const [name, setName] = useState(localStorage.getItem('little-arcade-name') ?? '');
+  const [name, setName] = useState(localStorage.getItem(nameKey) ?? '');
+  const [soloMode, setSoloMode] = useState(soloPreview);
   const [passcode, setPasscode] = useState('');
   const [room, setRoom] = useState<RoomView | null>(null);
   const [connected, setConnected] = useState(socket.connected);
@@ -70,6 +77,7 @@ export default function App() {
   const [muted, setMuted] = useState(() => localStorage.getItem('little-arcade-candy-muted') === 'true');
   const [greetingIndex, setGreetingIndex] = useState(0);
   const doodlePickerTrigger = useRef<HTMLButtonElement>(null);
+  const signedOut = useRef(false);
 
   const profilePayload = (nameValue: string, passcodeValue: string) => ({
     name: nameValue, passcode: passcodeValue, token,
@@ -81,11 +89,11 @@ export default function App() {
     const onConnect = () => {
       setConnected(true);
       const savedCode = sessionStorage.getItem('little-arcade-passcode');
-      const savedName = localStorage.getItem('little-arcade-name');
+      const savedName = localStorage.getItem(nameKey);
       if (savedCode && savedName) socket.emit('enter', profilePayload(savedName, savedCode));
     };
     const onDisconnect = () => setConnected(false);
-    const onRoomState = (s: RoomView) => { setRoom(s); setJoinError(''); setActionError(''); };
+    const onRoomState = (s: RoomView) => { if (signedOut.current) return; setRoom(s); setJoinError(''); setActionError(''); };
     const onJoinError = (e: string) => setJoinError(e);
     const onActionError = (e: string) => { setActionError(e); window.setTimeout(() => setActionError(''), 2800); };
     socket.on('connect', onConnect); socket.on('disconnect', onDisconnect);
@@ -110,7 +118,7 @@ export default function App() {
   }, [room?.self, room?.players.map(player => `${player.id}:${playerDoodleId(room.players, player)}`).join('|')]);
 
   const syncProfile = () => {
-    const savedName = localStorage.getItem('little-arcade-name') || name.trim();
+    const savedName = localStorage.getItem(nameKey) || name.trim();
     const savedCode = sessionStorage.getItem('little-arcade-passcode');
     if (savedName && savedCode) socket.emit('enter', profilePayload(savedName, savedCode));
   };
@@ -122,8 +130,8 @@ export default function App() {
   });
 
   const enter = (e: React.FormEvent) => {
-    e.preventDefault(); setJoinError('');
-    localStorage.setItem('little-arcade-name', name.trim()); sessionStorage.setItem('little-arcade-passcode', passcode.trim());
+    e.preventDefault(); setJoinError(''); signedOut.current = false;
+    localStorage.setItem(nameKey, name.trim()); sessionStorage.setItem('little-arcade-passcode', passcode.trim());
     socket.emit('enter', profilePayload(name.trim(), passcode.trim()));
   };
   const me = room?.players.find(p => p.id === room.self);
@@ -134,7 +142,33 @@ export default function App() {
   const displayPlayers = room?.players.map(player => player.id === room.self && selectedDoodle
     ? { ...player, doodleId: selectedDoodle }
     : player) ?? [];
+  const soloStarted = useRef(false);
+  useEffect(() => {
+    if (!soloMode || soloStarted.current || !room || room.game || room.players.length !== 1) return;
+    soloStarted.current = true;
+    socket.emit('startGame', { game: 'twohalves', format: 'quick', solo: true });
+  }, [soloMode, socket, room?.self, room?.game, room?.players.length]);
   const canStartGame = !!room && room.players.length === 2 && room.players.every(player => player.online);
+  const signOut = () => {
+    if (game && !window.confirm('Leave this game and sign out of the room?')) return;
+    signedOut.current = true;
+    socket.emit('leaveRoom');
+    sessionStorage.removeItem('little-arcade-passcode');
+    localStorage.removeItem(nameKey);
+    localStorage.removeItem(tokenKey);
+    setName(''); setPasscode(''); setRoom(null); setJoinError(''); setActionError('');
+    setWord(''); setHint(''); setDoodlePickerOpen(false);
+    setSoloMode(soloPreview);
+    soloStarted.current = false;
+  };
+  const startSolo = () => {
+    const soloName = name.trim() || 'Solo preview';
+    const soloPasscode = passcode.trim() || `solo-${crypto.randomUUID().slice(0, 6)}`;
+    setName(soloName); setPasscode(soloPasscode); setJoinError(''); signedOut.current = false; soloStarted.current = false;
+    localStorage.setItem(nameKey, soloName); sessionStorage.setItem('little-arcade-passcode', soloPasscode);
+    setSoloMode(true);
+    socket.emit('enter', profilePayload(soloName, soloPasscode));
+  };
 
   const isQuietGame = !!game;
   const myDoodle = selectedDoodle || (room ? playerDoodleId(room.players, me) : 'her');
@@ -145,7 +179,7 @@ export default function App() {
       <div className="scene-actor"><Doodle id={room ? partnerDoodle : 'moonbeam'} name={room ? other?.name : 'Your person'} size="clamp(58px, 9vw, 116px)"/><span>{room ? other?.name || 'your person' : 'your person'}</span></div>
     </div>}</>}
     <FloatingReactions reaction={game?.lastReaction} self={room?.self} />
-    <header className="topbar"><a className="brand" href="#home" onClick={e => { e.preventDefault(); if (room) socket.emit('backToLobby'); }}><span className="brand-icon">✦</span><span>our little <b>arcade</b></span></a><div className="topbar-actions">{room && !game && <button ref={doodlePickerTrigger} type="button" className="doodle-picker-trigger" onClick={() => setDoodlePickerOpen(true)}><Doodle id={myDoodle} size={56} crop name={me?.name}/><span>Pick your doodle</span></button>}<span className={`connection ${connected ? 'online' : ''}`}><i />{connected ? 'connected' : 'reconnecting…'}</span><SceneSettings muted={muted} onMute={toggleMute} onShareSkyChange={() => syncProfile()}/></div></header>
+    <header className="topbar"><a className="brand" href="#home" onClick={e => { e.preventDefault(); if (room) socket.emit('backToLobby'); }}><span className="brand-icon">✦</span><span>our little <b>arcade</b></span></a><div className="topbar-actions">{room && !game && <button ref={doodlePickerTrigger} type="button" className="doodle-picker-trigger" onClick={() => setDoodlePickerOpen(true)}><Doodle id={myDoodle} size={56} crop name={me?.name}/><span>Pick your doodle</span></button>}<span className={`connection ${connected ? 'online' : ''}`}><i />{connected ? 'connected' : 'reconnecting…'}</span>{room && <button type="button" className="sign-out-button" onClick={signOut} title="Leave the room and clear this device">Sign out</button>}<SceneSettings muted={muted} onMute={toggleMute} onShareSkyChange={() => syncProfile()}/></div></header>
     {!room ? <section className="landing">
       <div className="landing-copy"><div className="eyebrow"><span>✧</span> JUST FOR TWO <span>✧</span></div><h1>A little place<br />for <em>us</em> to play.</h1><p>Pick a game, settle in, and make a tiny memory together.</p><div className="floaty floaty-one">☾</div><div className="floaty floaty-two">✦</div></div>
       <form className="panel enter-card" onSubmit={enter}>
@@ -154,12 +188,15 @@ export default function App() {
         <label>Our shared passcode<input autoComplete="off" required type="password" value={passcode} onChange={e => setPasscode(e.target.value)} placeholder="Just between us" /></label>
         {joinError && <div className="error-box" role="alert">{joinError}</div>}
         <button className="button primary wide" type="submit">Enter our room <span>→</span></button>
+        {import.meta.env.DEV && <button className="solo-preview-link" type="button" onClick={startSolo}>Just previewing? <b>Play alone</b> →</button>}
+        {soloMode && <div className="solo-preview-note">Solo dev preview: any name and passcode starts Two Halves alone.</div>}
         <div className="privacy-note">🔒 Just the two of you, no accounts needed.</div>
       </form>
       <footer className="landing-footer">a small soft spot on the internet <span>·</span> made with love ♡</footer>
     </section> : <>
       {!game && <section className="lobby-hero"><div className="lobby-hero-copy"><div className="eyebrow">YOUR SHARED LITTLE WORLD</div><h1>Hey, {me?.name || 'love'} <span>♡</span></h1><p>{lobbyCopy.greetings[greetingIndex % lobbyCopy.greetings.length] || arcadeConfig.greeting}</p></div><div className="lobby-hero-stage"><div className={`hero-player ${me?.online ? 'online' : 'away'}`} data-reaction-player={me?.id}><Doodle id={myDoodle} expression={me?.online ? 'happy' : 'sleepy'} size={56} crop name={me?.name}/><b>{me?.name || 'you'}</b><small><i/>{me?.online ? 'here with you' : 'away'}</small></div><div className={`hero-player ${other?.online ? 'online' : 'away'}`} data-reaction-player={other?.id}><Doodle id={partnerDoodle} expression={other?.online ? 'happy' : 'sleepy'} size={56} crop name={other?.name}/><b>{other?.name || 'partner'}</b><small><i/>{other?.online ? 'here with you' : 'away'}</small></div></div></section>}
       {!game && !canStartGame && <p className="lobby-connection-note" role="status">{room.players.length < 2 ? 'Your person needs to join the room before a game can start.' : 'Both players need to be connected before a game can start.'}</p>}
+      {import.meta.env.DEV && !game && room.players.length === 1 && <button type="button" className="solo-lobby-button" onClick={() => socket.emit('startGame', { game: 'twohalves', format: 'quick', solo: true })}>Play alone · Two Halves preview →</button>}
       {actionError && <div className="toast" role="status">{actionError}</div>}
       {game ? <GameScreenErrorBoundary key={game.game} onBackToLobby={() => socket.emit('backToLobby')}>
         {game.game === 'hangman' ? <HangmanScreen game={game} self={room.self} players={displayPlayers} socket={socket} word={word} setWord={setWord} hint={hint} setHint={setHint} connected={connected} muted={muted} onToggleMute={toggleMute} /> : game.game === 'cups' ? <CupsGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'poison' ? <PoisonGame game={game} self={room.self} players={displayPlayers} socket={socket} sameSweetMoments={room.sameSweetMoments} /> : game.game === 'cloud' ? <CloudGame game={game} self={room.self} players={displayPlayers} socket={socket} connected={connected} /> : game.game === 'slapcount' ? <SlapCountGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'familyfeud' ? <FamilyFeudGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'rps' ? <RockPaperScissorsGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'hotbomb' ? <HotBombGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'twohalves' ? <TwoHalvesGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : null}
