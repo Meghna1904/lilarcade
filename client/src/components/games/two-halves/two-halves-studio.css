@@ -146,6 +146,100 @@
 @media(prefers-reduced-motion:reduce){
   .twohalves-studio[data-mode=narrow] .twohalves-palette-panel{transition:none}
 }
+
+/* Shared Our Little Arcade look, with the drawing studio layout kept intact. */
+.app-shell.twohalves-app-shell{
+  --th-ink:var(--text);
+  --th-muted:var(--muted);
+  --th-plum:var(--butter);
+  --th-panel:var(--surface);
+  --th-base:var(--bg);
+  background:var(--bg);
+  color:var(--text);
+}
+.twohalves-app-shell>.topbar{background:var(--bg);color:var(--text)}
+.twohalves-app-shell>.topbar .connection{color:var(--muted)}
+.twohalves-app-shell>.topbar .scene-settings-button{color:var(--text);border-color:var(--line);background:var(--surface)}
+.twohalves-screen{--th-ink:var(--text);--th-muted:var(--muted);--th-plum:var(--butter);--th-panel:var(--surface);--th-base:var(--bg);background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif}
+.twohalves-app-shell>.topbar .brand{color:var(--text)}
+.twohalves-title,.twohalves-copy h1,.twohalves-studio h1,.twohalves-result h1{font-family:var(--display)}
+.twohalves-title small{font-family:'DM Sans',sans-serif}
+.twohalves-title>span,.twohalves-copy h1 em,.twohalves-result h1 em,.twohalves-doodle-heart{color:var(--peach)}
+.twohalves-mood-row i{color:var(--peach)}
+.twohalves-back,.twohalves-copy>small,.twohalves-pair b,.twohalves-studio-heading p{color:var(--muted)}
+.twohalves-step,.twohalves-kicker{color:var(--butter)}
+.twohalves-tear-copy h1{font-family:var(--display)}
+.twohalves-tear-copy p,.twohalves-result>p{color:var(--muted)}
+.twohalves-tear-wait{color:var(--butter)}
+.twohalves-setting-group>span,.twohalves-seam-color{color:var(--muted)}
+.twohalves-preview-card,.twohalves-doodle-pair,.twohalves-palette-panel,.twohalves-canvas-zoom{
+  background:var(--surface);
+  border-color:var(--line);
+}
+.twohalves-toolrail button,.twohalves-history button,.twohalves-setting-group button,
+.twohalves-palette-tabs button,.twohalves-mood-row button,.twohalves-hue-picker,
+.twohalves-hex-input,.twohalves-rgb-row input,.twohalves-eyedropper{
+  background-color:var(--surface2);
+  border-color:var(--line);
+  color:var(--text);
+}
+.twohalves-toolrail button.active,.twohalves-palette-tabs button.active,
+.twohalves-mood-row button:hover,.twohalves-mood-row button.active,
+.twohalves-setting-group button.active,.twohalves-picker-mode button.active,
+.twohalves-zoom button.active,.twohalves-history button.active,
+.twohalves-canvas-zoom button:hover{
+  background:var(--butter);
+  border-color:var(--butter);
+  color:#342233;
+}
+.twohalves-studio .twohalves-canvas-viewport{background-color:var(--surface2);border-color:var(--line)}
+.twohalves-studio .twohalves-palette-panel{background:var(--surface);border-color:var(--line)}
+.twohalves-studio[data-mode=narrow] .twohalves-palette-panel{background:var(--surface)}
+.twohalves-history button:hover,.twohalves-toolrail button:hover,
+.twohalves-setting-group button:hover,.twohalves-palette-tabs button:hover{
+  border-color:#ffd98a88;
+}
+.twohalves-toolrail button:hover:not(.active),.twohalves-history button:hover:not(:disabled),
+.twohalves-setting-group button:hover:not(.active),.twohalves-palette-tabs button:hover:not(.active){
+  background:var(--surface);
+}
+.twohalves-wait{background:var(--surface2);color:var(--butter)}
+.twohalves-fill-cue{background:#493747;color:#ffe2d7;border-color:#ff9b8f66}
+.twohalves-history .twohalves-done-button,.twohalves-primary{
+  background:var(--peach);
+  border-color:var(--peach);
+  color:#342233;
+  font-family:var(--display);
+  box-shadow:0 5px 0 #d77570;
+}
+.twohalves-save-color,.twohalves-use-fill{background:var(--peach);border-color:var(--peach);color:#342233}
+.twohalves-done-stamp{background:#d8f1e6;color:#37564f}
+.twohalves-result-actions .twohalves-secondary,.twohalves-zoom button{
+  background:var(--surface2);
+  border-color:var(--line);
+  color:var(--text);
+  font-family:'DM Sans',sans-serif;
+}
+.twohalves-merge{background:var(--surface);box-shadow:0 14px 34px #100d1b55}
+.twohalves-merge-frame{padding:12px;border:1px solid var(--line);border-radius:22px;background:var(--surface)}
+.twohalves-merge>.twohalves-sizer,.twohalves-merge-canvas,.twohalves-merge-final{border-radius:14px}
+.twohalves-upload-error{border-color:#ff9b8f66;background:#763e4b;color:#fff0ea}
+.twohalves-history .twohalves-done-button:hover,.twohalves-primary:hover:not(:disabled){
+  filter:brightness(1.04);
+}
+.twohalves-adjust input[type=range],.twohalves-brightness input[type=range]{accent-color:var(--peach)}
+.twohalves-upload{color:var(--butter)}
+.twohalves-current-color code,.twohalves-hue-picker b,.twohalves-hue-picker code,
+.twohalves-adjust label b{color:var(--text)}
+.twohalves-hue-picker small,.twohalves-tool-hint,.twohalves-mood-row>span,
+.twohalves-adjust label span,.twohalves-zoom output{color:var(--muted)}
+.twohalves-picker-mode button{background:var(--surface2);border-color:var(--line);color:var(--text)}
+.twohalves-canvas-zoom output{border-color:var(--line);background:var(--bg);color:var(--text)}
+.twohalves-drawer-close{background:var(--surface2);border-color:var(--line);color:var(--text)}
+
+@media(max-width:760px){
+  .twohalves-screen{padding-inline:clamp(12px,4vw,22px)}
+}
 /* ==========================================================================
    Tear, merge and seam
    ========================================================================== */
