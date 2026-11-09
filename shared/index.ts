@@ -1,4 +1,4 @@
-export type GameId = 'hangman' | 'cups' | 'poison' | 'cloud' | 'slapcount' | 'familyfeud' | 'rps' | 'hotbomb' | 'twohalves' | 'picturepuzzle';
+export type GameId = 'hangman' | 'cups' | 'poison' | 'cloud' | 'slapcount' | 'familyfeud' | 'rps' | 'hotbomb' | 'twohalves' | 'picturepuzzle' | 'tictactoe';
 export { REACTIONS, isReactionId } from './reactions.js';
 export type { ReactionId } from './reactions.js';
 export type MatchFormat = 'quick' | 'bestOf3' | 'bestOf5';
@@ -95,6 +95,14 @@ export type RpsView = {
   choices?: Record<string, RpsChoice>; roundWinner?: string; matchWinner?: string;
   draw: boolean; paused: boolean; lastReaction?: { player: string; emoji: string; at: number };
 };
+export type TicTacToeMark = 'X' | 'O';
+export type TicTacToeBoard = { cells: Array<TicTacToeMark | null>; winner?: string };
+export type TicTacToeView = {
+  game: 'tictactoe'; phase: 'playing' | 'complete'; players: [string, string]; boardCount: 1 | 3;
+  boards: TicTacToeBoard[]; currentPlayer: string; marks: Record<string, TicTacToeMark>; wins: Record<string, number>;
+  lastRemoved?: { board: number; cell: number; mark: TicTacToeMark; at: number };
+  winner?: string; paused: boolean;
+};
 export type HotBombAction = 'pass' | 'dodge' | 'feint';
 export type HotBombFlightView = { id: number; from: string; to: string; startedAt: number; durationMs: number; reversed: boolean };
 export type HotBombView = {
@@ -161,13 +169,15 @@ export type SlapMove =
   | { type: 'slap:nextRound' }
   | { type: 'slap:backToLobby' };
 export type RoomView = {
-  self: string; players: PlayerSummary[]; status: string; game: HangmanView | CupsView | PoisonView | CloudView | SlapView | FamilyFeudView | RpsView | HotBombView | TwoHalvesView | PicturePuzzleView | null;
+  self: string; players: PlayerSummary[]; status: string; game: HangmanView | CupsView | PoisonView | CloudView | SlapView | FamilyFeudView | RpsView | TicTacToeView | HotBombView | TwoHalvesView | PicturePuzzleView | null;
   scoreboard: Scoreboard; sameSweetMoments: number; error?: string;
 };
 export type ClientToServerEvents = {
   enter: (payload: { name: string; passcode: string; token: string; timezone?: string; doodleId?: string; shareSky?: boolean }) => void;
   'doodle:select': (payload: { doodleId: string }) => void;
-  startGame: (payload: { game: GameId; format: MatchFormat; cups?: Omit<CupsSettings, 'format'>; poison?: Omit<PoisonSettings, 'format'>; cloud?: CloudSettings; slapCount?: SlapSettings; familyFeud?: { rounds: number }; solo?: boolean }) => void;
+  startGame: (payload: { game: GameId; format: MatchFormat; cups?: Omit<CupsSettings, 'format'>; poison?: Omit<PoisonSettings, 'format'>; cloud?: CloudSettings; slapCount?: SlapSettings; familyFeud?: { rounds: number }; tictactoe?: { boardCount: 1 | 3 }; solo?: boolean }) => void;
+  'tictactoe:move': (payload: { board: number; cell: number }) => void;
+  'tictactoe:replay': () => void;
   'rps:choose': (payload: { choice: RpsChoice }) => void;
   'rps:next': () => void;
   'hotbomb:action': (payload: { action: HotBombAction }) => void;

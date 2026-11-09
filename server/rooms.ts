@@ -2,7 +2,7 @@ import { createHash, createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isReactionId, type CloudMove, type CloudSettings, type CupId, type GameId, type MatchFormat, type RoomView, type Scoreboard, type CupsSettings, type PoisonSettings, type SlapMove, type SlapSettings, type HotBombAction, type TwoHalvesMergeStyle, type TwoHalvesSeamStyle, type TwoHalvesSettings, type TwoHalvesSplit, type TwoHalvesTear, type TwoHalvesTearStyle, type TwoHalvesView, type PicturePuzzleMode, type PicturePuzzleView, type PicturePuzzleBoard, type PicturePuzzlePoint, type PicturePuzzleChoice, type PicturePuzzleCropBox, defaultTwoHalvesSettings } from '@arcade/shared';
+import { isReactionId, type CloudMove, type CloudSettings, type CupId, type GameId, type MatchFormat, type RoomView, type Scoreboard, type CupsSettings, type PoisonSettings, type SlapMove, type SlapSettings, type HotBombAction, type TwoHalvesMergeStyle, type TwoHalvesSeamStyle, type TwoHalvesSettings, type TwoHalvesSplit, type TwoHalvesTear, type TwoHalvesTearStyle, type TwoHalvesView, type PicturePuzzleMode, type PicturePuzzleView, type PicturePuzzleBoard, type PicturePuzzlePoint, type PicturePuzzleChoice, type PicturePuzzleCropBox, type TicTacToeMark, type TicTacToeView, defaultTwoHalvesSettings } from '@arcade/shared';
 import { createHangman, guess, setWord, viewFor, type HangmanGame } from './games/hangman.js';
 import { createCups, getViewFor as cupsViewFor, lockSecret, reaction as cupsReaction, submitGuess, useHint, validSettings, type CupsGame } from './games/cups.js';
 import { checkForcedLoss, createPoison, getViewFor as poisonViewFor, lockPick, pickTile, react as poisonReaction, resolveForcedLoss, tapTile, timeoutTurn, validPoisonSettings, type PoisonGame } from './games/poison.js';
@@ -14,9 +14,10 @@ import { advanceHotBomb, createHotBombGame, hotBombAction as applyHotBombAction,
 type Player = { id: string; name: string; online: boolean; socketId: string; timezone?: string; doodleId?: string };
 type TwoHalvesGame = { twoHalves: true; phase: TwoHalvesView['phase']; players: [string, string]; page?: string; halves: Record<string, string>; completed: Record<string, boolean>; paused: boolean; settings: TwoHalvesSettings; tear?: TwoHalvesTear; solo: boolean; activeSide: 0 | 1 };
 type PicturePuzzleDrag = { piece: number; groupId: number; origin: Record<number, PicturePuzzlePoint> };
+type TicTacToeGame = { ticTacToe: true; phase: TicTacToeView['phase']; players: [string, string]; boardCount: 1 | 3; boards: Array<{ cells: Array<TicTacToeMark | null>; moves: number[]; winner?: string }>; currentPlayer: string; marks: Record<string, TicTacToeMark>; wins: Record<string, number>; lastRemoved?: TicTacToeView['lastRemoved']; winner?: string; paused: boolean };
 const picturePuzzleScatterGap = 36;
 type PicturePuzzleGame = { picturePuzzle: true; phase: PicturePuzzleView['phase']; players: [string, string]; owner: string; image?: string; imageAspect: number; mode: PicturePuzzleMode; pieces: number; rows: number; cols: number; cropBox: PicturePuzzleCropBox; pieceChoices: PicturePuzzleChoice[]; seed: number; ready: Record<string, boolean>; paused: boolean; startedAt?: number; pausedTotalMs: number; pausedAt?: number; boards: Record<string, PicturePuzzleBoard>; drags: Record<string, PicturePuzzleDrag>; winner?: string; elapsedMs?: number };
-type Game = HangmanGame | CupsGame | PoisonGame | CloudGame | SlapCountGame | FamilyFeudGame | RpsGame | HotBombGame | TwoHalvesGame | PicturePuzzleGame;
+type Game = HangmanGame | CupsGame | PoisonGame | CloudGame | SlapCountGame | FamilyFeudGame | RpsGame | TicTacToeGame | HotBombGame | TwoHalvesGame | PicturePuzzleGame;
 type Room = { key: string; players: Player[]; game: Game | null; scoreboard: Scoreboard; sameSweetMoments: number };
 const rooms = new Map<string, Room>();
 function manifestDoodleIds() {
@@ -34,7 +35,7 @@ function validTimezone(value: unknown): value is string {
 function validDoodleId(value: unknown): value is string {
   return typeof value === 'string' && value.length <= 40 && manifestDoodleIds().has(value);
 }
-const emptyScore = (): Scoreboard => ({ hangman: {}, cups: {}, poison: {}, cloud: {}, slapcount: {}, familyfeud: {}, rps: {}, hotbomb: {}, twohalves: {}, picturepuzzle: {} });
+const emptyScore = (): Scoreboard => ({ hangman: {}, cups: {}, poison: {}, cloud: {}, slapcount: {}, familyfeud: {}, rps: {}, hotbomb: {}, twohalves: {}, picturepuzzle: {}, tictactoe: {} });
 export const hashPasscode = (passcode: string) => {
   const pepper = process.env.ARCADE_PASSCODE_PEPPER;
   return pepper
@@ -112,10 +113,10 @@ function picturePuzzleViewFor(game: PicturePuzzleGame, self: string): PicturePuz
 export function lobbyView(room: Room, self: string, error?: string): RoomView {
   const players = room.players.map(({ id, name, online, timezone, doodleId }) => ({ id, name, online, ...(timezone ? { timezone } : {}), ...(doodleId ? { doodleId } : {}) }));
   const other = room.players.find(p => p.id !== self);
-  const gameView = room.game ? 'picturePuzzle' in room.game ? picturePuzzleViewFor(room.game, self) : 'twoHalves' in room.game ? { game: 'twohalves' as const, phase: room.game.phase, players: room.game.players, page: room.game.page, halves: room.game.phase === 'complete' || room.game.solo ? room.game.halves : room.game.halves[self] ? { [self]: room.game.halves[self] } : {}, completed: room.game.completed, paused: room.game.paused, settings: room.game.settings ?? defaultTwoHalvesSettings, ...(room.game.solo ? { solo: true, activeSide: room.game.activeSide } : {}), ...(room.game.tear ? { tear: room.game.tear } : {}) } : 'familyFeud' in room.game ? familyFeudView(room.game, self) : 'slapCount' in room.game ? slapViewFor(room.game, self) : 'cloudGame' in room.game ? cloudViewFor(room.game, self) : 'poisonA' in room.game ? poisonViewFor(room.game, self) : 'cups' in room.game ? cupsViewFor(room.game, self) : 'rps' in room.game ? rpsView(room.game, self) : 'hotBomb' in room.game ? hotBombView(room.game, self) : viewFor(room.game, self) : null;
+  const gameView = room.game ? 'picturePuzzle' in room.game ? picturePuzzleViewFor(room.game, self) : 'twoHalves' in room.game ? { game: 'twohalves' as const, phase: room.game.phase, players: room.game.players, page: room.game.page, halves: room.game.phase === 'complete' || room.game.solo ? room.game.halves : room.game.halves[self] ? { [self]: room.game.halves[self] } : {}, completed: room.game.completed, paused: room.game.paused, settings: room.game.settings ?? defaultTwoHalvesSettings, ...(room.game.solo ? { solo: true, activeSide: room.game.activeSide } : {}), ...(room.game.tear ? { tear: room.game.tear } : {}) } : 'familyFeud' in room.game ? familyFeudView(room.game, self) : 'slapCount' in room.game ? slapViewFor(room.game, self) : 'cloudGame' in room.game ? cloudViewFor(room.game, self) : 'poisonA' in room.game ? poisonViewFor(room.game, self) : 'cups' in room.game ? cupsViewFor(room.game, self) : 'rps' in room.game ? rpsView(room.game, self) : 'ticTacToe' in room.game ? { game: 'tictactoe' as const, phase: room.game.phase, players: room.game.players, boardCount: room.game.boardCount, boards: room.game.boards.map(({ cells, winner }) => ({ cells, winner })), currentPlayer: room.game.currentPlayer, marks: room.game.marks, wins: room.game.wins, lastRemoved: room.game.lastRemoved, winner: room.game.winner, paused: room.game.paused } : 'hotBomb' in room.game ? hotBombView(room.game, self) : viewFor(room.game, self) : null;
   return { self, players, status: !other ? 'Waiting for your person…' : other.online ? `${other.name} is here 💗` : `${other.name} disconnected, waiting for them to come back`, game: gameView, scoreboard: room.scoreboard, sameSweetMoments: room.sameSweetMoments, ...(error ? { error } : {}) };
 }
-export function startGame(room: Room, player: string, game: GameId, format: MatchFormat, cups?: Omit<CupsSettings, 'format'>, poison?: Omit<PoisonSettings, 'format'>, cloud?: CloudSettings, slapCount?: SlapSettings, familyFeud?: { rounds: number }, twoHalvesSolo?: boolean) {
+export function startGame(room: Room, player: string, game: GameId, format: MatchFormat, cups?: Omit<CupsSettings, 'format'>, poison?: Omit<PoisonSettings, 'format'>, cloud?: CloudSettings, slapCount?: SlapSettings, familyFeud?: { rounds: number }, twoHalvesSolo?: boolean, tictactoe?: { boardCount: 1 | 3 }) {
   // Dev-only alone mode: one online player can open Two Halves and paint both halves.
   const solo = game === 'twohalves' && twoHalvesSolo === true && room.players.length === 1 && room.players[0].online && process.env.NODE_ENV !== 'production';
   if (!solo && (room.players.length !== 2 || room.players.some(p => !p.online))) return 'Wait until both of you are here.';
@@ -157,6 +158,11 @@ export function startGame(room: Room, player: string, game: GameId, format: Matc
   else if (game === 'rps') {
     if (format !== 'bestOf5') return 'Rock Paper Scissors is a best of 5 tournament.';
     room.game = createRpsGame(player, other);
+  }
+  else if (game === 'tictactoe') {
+    const boardCount = tictactoe?.boardCount ?? 1;
+    if (boardCount !== 1 && boardCount !== 3) return 'Choose one board or three boards.';
+    room.game = { ticTacToe: true, phase: 'playing', players: [player, other], boardCount, boards: Array.from({ length: boardCount }, () => ({ cells: Array<TicTacToeMark | null>(9).fill(null), moves: [] })), currentPlayer: player, marks: { [player]: 'X', [other]: 'O' }, wins: { [player]: 0, [other]: 0 }, paused: false };
   }
   else if (game === 'hotbomb') room.game = createHotBombGame(player, other, format);
   else if (game === 'twohalves') room.game = { twoHalves: true, phase: 'page', players: [player, solo ? `${player}:solo` : other], halves: {}, completed: {}, paused: false, settings: { ...defaultTwoHalvesSettings }, solo, activeSide: 0 };
@@ -533,6 +539,53 @@ export function rpsNext(room: Room, player: string) {
   if (room.players.some(candidate => !candidate.online)) return 'Wait until your person is back to play again.';
   if (game.phase === 'matchOver') { room.game = createRpsGame(game.playerA, game.playerB); return null; }
   return nextRpsRound(game, player);
+}
+
+const ticTacToeLines = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]] as const;
+function ticTacToeBoardWinner(game: TicTacToeGame, board: TicTacToeGame['boards'][number]) {
+  const line = ticTacToeLines.find(([a, b, c]) => board.cells[a] && board.cells[a] === board.cells[b] && board.cells[a] === board.cells[c]);
+  return line ? game.players.find(player => game.marks[player] === board.cells[line[0]]) : undefined;
+}
+export function ticTacToeMove(room: Room, player: string, boardIndex: unknown, cellIndex: unknown, now = Date.now()) {
+  const game = room.game;
+  if (!game || !('ticTacToe' in game)) return 'Start Tic-Tac-Toe first.';
+  if (game.phase !== 'playing' || game.paused) return 'The match is not accepting moves right now.';
+  if (!game.players.includes(player)) return 'You are not in this match.';
+  if (player !== game.currentPlayer) return 'Wait for your turn.';
+  if (!Number.isInteger(boardIndex) || (boardIndex as number) < 0 || (boardIndex as number) >= game.boards.length) return 'Choose a board in this match.';
+  if (!Number.isInteger(cellIndex) || (cellIndex as number) < 0 || (cellIndex as number) > 8) return 'Choose a square on the board.';
+  const board = game.boards[boardIndex as number];
+  if (board.winner) return 'That board already has a winner.';
+  const cell = cellIndex as number;
+  if (board.cells[cell]) return 'That square is already taken.';
+  game.lastRemoved = undefined;
+  board.cells[cell] = game.marks[player];
+  board.moves.push(cell);
+  board.winner = ticTacToeBoardWinner(game, board);
+  if (board.winner) {
+    game.wins[board.winner] = (game.wins[board.winner] ?? 0) + 1;
+    if (game.boardCount === 1 || game.wins[board.winner] >= 2) {
+      game.phase = 'complete';
+      game.winner = board.winner;
+      room.scoreboard.tictactoe[board.winner] = (room.scoreboard.tictactoe[board.winner] ?? 0) + 1;
+    }
+  } else if (board.moves.length === 9) {
+    const oldestCell = board.moves.shift()!;
+    const mark = board.cells[oldestCell]!;
+    board.cells[oldestCell] = null;
+    game.lastRemoved = { board: boardIndex as number, cell: oldestCell, mark, at: now };
+  }
+  if (game.phase === 'playing') game.currentPlayer = game.players.find(id => id !== player)!;
+  return null;
+}
+export function ticTacToeReplay(room: Room, player: string) {
+  const game = room.game;
+  if (!game || !('ticTacToe' in game)) return 'Start Tic-Tac-Toe first.';
+  if (game.phase !== 'complete' || !game.players.includes(player)) return 'Finish the match first.';
+  if (room.players.some(candidate => !candidate.online)) return 'Wait until your person is back to play again.';
+  const starter = game.players.find(id => id !== game.players[0])!;
+  room.game = { ticTacToe: true, phase: 'playing', players: game.players, boardCount: game.boardCount, boards: Array.from({ length: game.boardCount }, () => ({ cells: Array<TicTacToeMark | null>(9).fill(null), moves: [] })), currentPlayer: starter, marks: { [starter]: 'X', [game.players.find(id => id !== starter)!]: 'O' }, wins: {}, paused: false };
+  return null;
 }
 
 function syncHotBombWinner(room: Room, game: HotBombGame, previousPhase: HotBombGame['phase']) {

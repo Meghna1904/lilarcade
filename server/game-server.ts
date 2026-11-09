@@ -7,7 +7,7 @@ import { Server } from 'socket.io';
 import type { ClientToServerEvents, ServerToClientEvents } from '@arcade/shared';
 import type { CloudMove } from '@arcade/shared';
 import type { SlapMove } from '@arcade/shared';
-import { backToLobby, cloudMove, cupsGuess, cupsHint, cupsLock, cupsReact, disconnect, enterRoom, lobbyView, makeGuess, nextCloudRound, nextHangman, nextSlapRound, playerFor, poisonForcedLoss, poisonLock, poisonPick, poisonReact, poisonTap, poisonTimeout, nextPoisonRound, reaction, roomForSocket, setHangman, slapCompleteResolve, slapMove, slapResolveWindow, slapStartPlaying, startGame, markSlapCardVisible, updatePlayerDoodle, familyFeudStart, familyFeudSubmit, familyFeudScore, familyFeudNext, familyFeudTimeout, rpsChoose, rpsNext, hotBombAction, hotBombNext, advanceHotBombRoom, hotBombTimerAt, twoHalvesPage, twoHalvesPaint, twoHalvesComplete, twoHalvesBack, twoHalvesSettings, twoHalvesTear, twoHalvesSide, picturePuzzleSetup, picturePuzzleReady, picturePuzzleGrab, picturePuzzleMove, picturePuzzleDrop, picturePuzzleScatter, picturePuzzleReplay, picturePuzzleBack, leaveRoom } from './rooms.js';
+import { backToLobby, cloudMove, cupsGuess, cupsHint, cupsLock, cupsReact, disconnect, enterRoom, lobbyView, makeGuess, nextCloudRound, nextHangman, nextSlapRound, playerFor, poisonForcedLoss, poisonLock, poisonPick, poisonReact, poisonTap, poisonTimeout, nextPoisonRound, reaction, roomForSocket, setHangman, slapCompleteResolve, slapMove, slapResolveWindow, slapStartPlaying, startGame, markSlapCardVisible, updatePlayerDoodle, familyFeudStart, familyFeudSubmit, familyFeudScore, familyFeudNext, familyFeudTimeout, rpsChoose, rpsNext, ticTacToeMove, ticTacToeReplay, hotBombAction, hotBombNext, advanceHotBombRoom, hotBombTimerAt, twoHalvesPage, twoHalvesPaint, twoHalvesComplete, twoHalvesBack, twoHalvesSettings, twoHalvesTear, twoHalvesSide, picturePuzzleSetup, picturePuzzleReady, picturePuzzleGrab, picturePuzzleMove, picturePuzzleDrop, picturePuzzleScatter, picturePuzzleReplay, picturePuzzleBack, leaveRoom } from './rooms.js';
 import { checkForcedLoss, legalTiles } from './games/poison.js';
 import { clearLockout, completeSwap, pauseTimers, resumeTimers, timeoutCall, timeoutHunt, type CloudGame } from './games/cloud.js';
 import { completeResolve, pauseTimers as pauseSlapTimers, recordOneWayLatency, resumeTimers as resumeSlapTimers, type SlapCountGame } from './games/slapcount.js';
@@ -296,7 +296,9 @@ io.on('connection', socket => {
     handleCloud(room, player.id, move, ack);
   };
 
-  socket.on('startGame', ({ game, format, cups, poison, cloud, slapCount, familyFeud, solo }) => action((r, p) => startGame(r, p, game, format, cups, poison, cloud, slapCount, familyFeud, solo)));
+  socket.on('startGame', ({ game, format, cups, poison, cloud, slapCount, familyFeud, solo, tictactoe }) => action((r, p) => startGame(r, p, game, format, cups, poison, cloud, slapCount, familyFeud, solo, tictactoe)));
+  socket.on('tictactoe:move', ({ board, cell }) => action((r, p) => ticTacToeMove(r, p, board, cell)));
+  socket.on('tictactoe:replay', () => action((r, p) => ticTacToeReplay(r, p)));
   socket.on('familyfeud:start', () => action((r, p) => familyFeudStart(r, p)));
   socket.on('familyfeud:submit', ({ answer }) => action((r, p) => familyFeudSubmit(r, p, answer)));
   socket.on('familyfeud:score', ({ target, matchIndex, points }) => action((r, p) => familyFeudScore(r, p, target, matchIndex, points)));

@@ -13,6 +13,7 @@ import { RockPaperScissorsGame } from './components/games/rps/RockPaperScissorsG
 import { HotBombGame } from './components/games/hot-bomb/HotBombGame';
 import { TwoHalvesGame } from './components/games/two-halves/TwoHalvesGame';
 import { PicturePuzzleGame } from './components/games/picture-puzzle/PicturePuzzleGame';
+import { TicTacToeGame } from './components/games/tictactoe/TicTacToeGame';
 import { GameScreenErrorBoundary } from './components/games/GameScreenErrorBoundary';
 import { Scene, SceneSettings } from './scene/Scene';
 import { sceneConfig } from './scene/config';
@@ -30,6 +31,7 @@ import './lobby/lobby.css';
 import './components/games/hangman/hangman-screen.css';
 import './components/games/rps/rps.css';
 import './components/games/hot-bomb/hot-bomb.css';
+import './components/games/tictactoe/tictactoe.css';
 
 type ArcadeSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 // A second tab can take the other seat with ?player=2. Normal visits keep one
@@ -58,6 +60,7 @@ function startLobbyGame(socket: ArcadeSocket, id: LobbyGameId, format: string, s
   if (id === 'hotbomb') socket.emit('startGame', { game: 'hotbomb', format: format as 'quick' | 'bestOf3' | 'bestOf5' });
   if (id === 'twohalves') socket.emit('startGame', { game: 'twohalves', format: 'quick' });
   if (id === 'picturepuzzle') socket.emit('startGame', { game: 'picturepuzzle', format: 'quick' });
+  if (id === 'tictactoe') socket.emit('startGame', { game: 'tictactoe', format: 'quick', tictactoe: { boardCount: Number(setting(settings, 'boardCount', 1)) as 1 | 3 } });
 }
 
 export default function App() {
@@ -185,7 +188,7 @@ export default function App() {
   const myDoodle = selectedDoodle || (room ? playerDoodleId(room.players, me) : 'her');
   const partnerDoodle = room ? playerDoodleId(room.players, room.players.find(player => player.id !== room.self)) : 'him';
   const latestReaction = game && 'lastReaction' in game ? game.lastReaction : undefined;
-  return <main className={`app-shell ${!isQuietGame ? 'scene-active' : ''} ${game ? 'game-active' : ''} ${game?.game === 'cups' ? 'cups-app-shell' : ''} ${game?.game === 'hangman' ? 'hangman-app-shell' : ''} ${game?.game === 'poison' ? 'poison-app-shell' : ''} ${game?.game === 'cloud' ? 'cloud-app-shell' : ''} ${game?.game === 'slapcount' ? 'slap-app-shell' : ''} ${game?.game === 'familyfeud' ? 'family-feud-app-shell' : ''} ${game?.game === 'rps' ? 'rps-app-shell' : ''} ${game?.game === 'hotbomb' ? 'hot-bomb-app-shell' : ''} ${game?.game === 'twohalves' ? 'twohalves-app-shell' : ''} ${game?.game === 'picturepuzzle' ? 'picture-puzzle-app-shell' : ''}`}>
+  return <main className={`app-shell ${!isQuietGame ? 'scene-active' : ''} ${game ? 'game-active' : ''} ${game?.game === 'cups' ? 'cups-app-shell' : ''} ${game?.game === 'hangman' ? 'hangman-app-shell' : ''} ${game?.game === 'poison' ? 'poison-app-shell' : ''} ${game?.game === 'cloud' ? 'cloud-app-shell' : ''} ${game?.game === 'slapcount' ? 'slap-app-shell' : ''} ${game?.game === 'familyfeud' ? 'family-feud-app-shell' : ''} ${game?.game === 'rps' ? 'rps-app-shell' : ''} ${game?.game === 'hotbomb' ? 'hot-bomb-app-shell' : ''} ${game?.game === 'twohalves' ? 'twohalves-app-shell' : ''} ${game?.game === 'picturepuzzle' ? 'picture-puzzle-app-shell' : ''} ${game?.game === 'tictactoe' ? 'tictactoe-app-shell' : ''}`}>
     {!isQuietGame && <><Scene rooftop={!!room}/>{!room && <div className="scene-actors login-actors" style={{ '--doodle-left': `${sceneConfig.doodlePlacement.left}%`, '--doodle-right': `${sceneConfig.doodlePlacement.right}%`, '--doodle-bottom': `${100 - sceneConfig.doodlePlacement.baseline}%` } as React.CSSProperties}>
       <div className="scene-actor"><Doodle id={room ? myDoodle : 'sunny'} name={room ? me?.name : 'You'} size="clamp(58px, 9vw, 116px)"/><span>{room ? me?.name : 'you'}</span></div>
       <div className="scene-actor"><Doodle id={room ? partnerDoodle : 'moonbeam'} name={room ? other?.name : 'Your person'} size="clamp(58px, 9vw, 116px)"/><span>{room ? other?.name || 'your person' : 'your person'}</span></div>
@@ -211,7 +214,7 @@ export default function App() {
       {import.meta.env.DEV && !game && room.players.length === 1 && <button type="button" className="solo-lobby-button" onClick={() => socket.emit('startGame', { game: 'twohalves', format: 'quick', solo: true })}>Play alone · Two Halves preview →</button>}
       {actionError && <div className="toast" role="status">{actionError}</div>}
       {game ? <GameScreenErrorBoundary key={game.game} onBackToLobby={() => socket.emit('backToLobby')}>
-        {game.game === 'hangman' ? <HangmanScreen game={game} self={room.self} players={displayPlayers} socket={socket} word={word} setWord={setWord} hint={hint} setHint={setHint} connected={connected} muted={muted} onToggleMute={toggleMute} /> : game.game === 'cups' ? <CupsGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'poison' ? <PoisonGame game={game} self={room.self} players={displayPlayers} socket={socket} sameSweetMoments={room.sameSweetMoments} /> : game.game === 'cloud' ? <CloudGame game={game} self={room.self} players={displayPlayers} socket={socket} connected={connected} /> : game.game === 'slapcount' ? <SlapCountGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'familyfeud' ? <FamilyFeudGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'rps' ? <RockPaperScissorsGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'hotbomb' ? <HotBombGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'twohalves' ? <TwoHalvesGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'picturepuzzle' ? <PicturePuzzleGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : null}
+        {game.game === 'hangman' ? <HangmanScreen game={game} self={room.self} players={displayPlayers} socket={socket} word={word} setWord={setWord} hint={hint} setHint={setHint} connected={connected} muted={muted} onToggleMute={toggleMute} /> : game.game === 'cups' ? <CupsGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'poison' ? <PoisonGame game={game} self={room.self} players={displayPlayers} socket={socket} sameSweetMoments={room.sameSweetMoments} /> : game.game === 'cloud' ? <CloudGame game={game} self={room.self} players={displayPlayers} socket={socket} connected={connected} /> : game.game === 'slapcount' ? <SlapCountGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'familyfeud' ? <FamilyFeudGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'rps' ? <RockPaperScissorsGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'tictactoe' ? <TicTacToeGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'hotbomb' ? <HotBombGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'twohalves' ? <TwoHalvesGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'picturepuzzle' ? <PicturePuzzleGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : null}
       </GameScreenErrorBoundary> : <section className="lobby-layout">
         <div className="games-column"><div className="lobby-games-heading"><div><div className="eyebrow">CHOOSE YOUR LITTLE ADVENTURE</div><h2>What shall we play?</h2></div><span className="tiny-sparkle">✧ ✦ ✧</span></div><div className="game-tickets">{gameRegistry.map(config => <GameTicket key={config.id} config={config} canPlay={canStartGame} onLaunch={(format, settings) => startLobbyGame(socket, config.id, format, settings)}/>)}</div><div className="lobby-coming-row"><span>ON THE WAY</span><i>Memory Duel</i><i>Draw &amp; Guess</i></div></div>
         <aside className="lobby-side-column"><LobbyScoreboard players={displayPlayers} self={room.self} scores={room.scoreboard} sameSweetMoments={room.sameSweetMoments}/><div className="panel note-card"><span>✉</span><p>Two players. One tiny corner. Infinite rematches.</p></div></aside>
