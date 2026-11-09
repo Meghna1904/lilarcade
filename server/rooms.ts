@@ -2,7 +2,7 @@ import { createHash, createHmac } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isReactionId, type CloudMove, type CloudSettings, type CupId, type GameId, type MatchFormat, type RoomView, type Scoreboard, type CupsSettings, type PoisonSettings, type SlapMove, type SlapSettings, type HotBombAction, type TwoHalvesMergeStyle, type TwoHalvesSeamStyle, type TwoHalvesSettings, type TwoHalvesSplit, type TwoHalvesTear, type TwoHalvesTearStyle, type TwoHalvesView, defaultTwoHalvesSettings } from '@arcade/shared';
+import { isReactionId, type CloudMove, type CloudSettings, type CupId, type GameId, type MatchFormat, type RoomView, type Scoreboard, type CupsSettings, type PoisonSettings, type SlapMove, type SlapSettings, type HotBombAction, type TwoHalvesMergeStyle, type TwoHalvesSeamStyle, type TwoHalvesSettings, type TwoHalvesSplit, type TwoHalvesTear, type TwoHalvesTearStyle, type TwoHalvesView, type PicturePuzzleMode, type PicturePuzzleView, type PicturePuzzleBoard, type PicturePuzzlePoint, type PicturePuzzleChoice, type PicturePuzzleCropBox, defaultTwoHalvesSettings } from '@arcade/shared';
 import { createHangman, guess, setWord, viewFor, type HangmanGame } from './games/hangman.js';
 import { createCups, getViewFor as cupsViewFor, lockSecret, reaction as cupsReaction, submitGuess, useHint, validSettings, type CupsGame } from './games/cups.js';
 import { checkForcedLoss, createPoison, getViewFor as poisonViewFor, lockPick, pickTile, react as poisonReaction, resolveForcedLoss, tapTile, timeoutTurn, validPoisonSettings, type PoisonGame } from './games/poison.js';
@@ -13,7 +13,10 @@ import { chooseRps, createRpsGame, nextRpsRound, rpsView, type RpsGame } from '.
 import { advanceHotBomb, createHotBombGame, hotBombAction as applyHotBombAction, hotBombView, nextHotBombEventAt, nextHotBombRound, setHotBombPaused, type HotBombGame } from './games/hot-bomb.js';
 type Player = { id: string; name: string; online: boolean; socketId: string; timezone?: string; doodleId?: string };
 type TwoHalvesGame = { twoHalves: true; phase: TwoHalvesView['phase']; players: [string, string]; page?: string; halves: Record<string, string>; completed: Record<string, boolean>; paused: boolean; settings: TwoHalvesSettings; tear?: TwoHalvesTear; solo: boolean; activeSide: 0 | 1 };
-type Game = HangmanGame | CupsGame | PoisonGame | CloudGame | SlapCountGame | FamilyFeudGame | RpsGame | HotBombGame | TwoHalvesGame;
+type PicturePuzzleDrag = { piece: number; groupId: number; origin: Record<number, PicturePuzzlePoint> };
+const picturePuzzleScatterGap = 36;
+type PicturePuzzleGame = { picturePuzzle: true; phase: PicturePuzzleView['phase']; players: [string, string]; owner: string; image?: string; imageAspect: number; mode: PicturePuzzleMode; pieces: number; rows: number; cols: number; cropBox: PicturePuzzleCropBox; pieceChoices: PicturePuzzleChoice[]; seed: number; ready: Record<string, boolean>; paused: boolean; startedAt?: number; pausedTotalMs: number; pausedAt?: number; boards: Record<string, PicturePuzzleBoard>; drags: Record<string, PicturePuzzleDrag>; winner?: string; elapsedMs?: number };
+type Game = HangmanGame | CupsGame | PoisonGame | CloudGame | SlapCountGame | FamilyFeudGame | RpsGame | HotBombGame | TwoHalvesGame | PicturePuzzleGame;
 type Room = { key: string; players: Player[]; game: Game | null; scoreboard: Scoreboard; sameSweetMoments: number };
 const rooms = new Map<string, Room>();
 function manifestDoodleIds() {
@@ -31,13 +34,27 @@ function validTimezone(value: unknown): value is string {
 function validDoodleId(value: unknown): value is string {
   return typeof value === 'string' && value.length <= 40 && manifestDoodleIds().has(value);
 }
-const emptyScore = (): Scoreboard => ({ hangman: {}, cups: {}, poison: {}, cloud: {}, slapcount: {}, familyfeud: {}, rps: {}, hotbomb: {}, twohalves: {} });
+const emptyScore = (): Scoreboard => ({ hangman: {}, cups: {}, poison: {}, cloud: {}, slapcount: {}, familyfeud: {}, rps: {}, hotbomb: {}, twohalves: {}, picturepuzzle: {} });
 export const hashPasscode = (passcode: string) => {
   const pepper = process.env.ARCADE_PASSCODE_PEPPER;
   return pepper
     ? createHmac('sha256', pepper).update(`room:${passcode}`).digest('hex')
     : createHash('sha256').update(passcode).digest('hex');
 };
+function setPicturePuzzlePaused(game: PicturePuzzleGame, paused: boolean, now = Date.now()) {
+  if (game.paused === paused) return;
+  game.paused = paused;
+  if (game.phase !== 'playing') return;
+  if (paused) {
+    game.pausedAt = now;
+    game.drags = {};
+    for (const board of Object.values(game.boards)) board.locks = {};
+  }
+  else {
+    if (game.pausedAt) game.pausedTotalMs += Math.max(0, now - game.pausedAt);
+    game.pausedAt = undefined;
+  }
+}
 export function enterRoom(passcode: string, name: string, token: string, socketId: string, metadata: { timezone?: unknown; doodleId?: unknown; shareSky?: unknown } = {}): { room?: Room; error?: string; id?: string } {
   const key = hashPasscode(passcode); let room = rooms.get(key);
   if (!room) { room = { key, players: [], game: null, scoreboard: emptyScore(), sameSweetMoments: 0 }; rooms.set(key, room); }
@@ -53,6 +70,7 @@ export function enterRoom(passcode: string, name: string, token: string, socketI
   if (room.game) {
     const paused = room.players.some(p => !p.online);
     if ('hotBomb' in room.game) setHotBombPaused(room.game, paused);
+    else if ('picturePuzzle' in room.game) setPicturePuzzlePaused(room.game, paused);
     else room.game.paused = paused;
   }
   return { room, id: player.id };
@@ -60,7 +78,7 @@ export function enterRoom(passcode: string, name: string, token: string, socketI
 export function disconnect(socketId: string) {
   for (const room of rooms.values()) {
     const p = room.players.find(player => player.socketId === socketId);
-    if (p) { p.online = false; if (room.game) { if ('hotBomb' in room.game) setHotBombPaused(room.game, true); else room.game.paused = true; } return room; }
+    if (p) { p.online = false; if (room.game) { if ('hotBomb' in room.game) setHotBombPaused(room.game, true); else if ('picturePuzzle' in room.game) setPicturePuzzlePaused(room.game, true); else room.game.paused = true; } return room; }
   }
 }
 export function leaveRoom(room: Room, player: string) {
@@ -79,10 +97,22 @@ export function updatePlayerDoodle(room: Room, playerId: string, doodleId: unkno
   player.doodleId = doodleId;
   return true;
 }
+function picturePuzzleViewFor(game: PicturePuzzleGame, self: string): PicturePuzzleView {
+  const boardId = game.mode === 'race' ? self : 'shared';
+  const board = game.boards[boardId] ?? { positions: {}, groups: [], locks: {}, zOrder: [] };
+  return {
+    game: 'picturepuzzle', phase: game.phase, players: game.players, owner: game.owner,
+    image: game.image, imageAspect: game.imageAspect, mode: game.mode, pieces: game.pieces,
+    rows: game.rows, cols: game.cols, cropBox: game.cropBox, pieceChoices: game.pieceChoices,
+    seed: game.seed, ready: game.ready, paused: game.paused, startedAt: game.startedAt,
+    pausedTotalMs: game.pausedTotalMs, pausedAt: game.pausedAt, board,
+    winner: game.winner, elapsedMs: game.elapsedMs,
+  };
+}
 export function lobbyView(room: Room, self: string, error?: string): RoomView {
   const players = room.players.map(({ id, name, online, timezone, doodleId }) => ({ id, name, online, ...(timezone ? { timezone } : {}), ...(doodleId ? { doodleId } : {}) }));
   const other = room.players.find(p => p.id !== self);
-  const gameView = room.game ? 'twoHalves' in room.game ? { game: 'twohalves' as const, phase: room.game.phase, players: room.game.players, page: room.game.page, halves: room.game.phase === 'complete' || room.game.solo ? room.game.halves : room.game.halves[self] ? { [self]: room.game.halves[self] } : {}, completed: room.game.completed, paused: room.game.paused, settings: room.game.settings ?? defaultTwoHalvesSettings, ...(room.game.solo ? { solo: true, activeSide: room.game.activeSide } : {}), ...(room.game.tear ? { tear: room.game.tear } : {}) } : 'familyFeud' in room.game ? familyFeudView(room.game, self) : 'slapCount' in room.game ? slapViewFor(room.game, self) : 'cloudGame' in room.game ? cloudViewFor(room.game, self) : 'poisonA' in room.game ? poisonViewFor(room.game, self) : 'cups' in room.game ? cupsViewFor(room.game, self) : 'rps' in room.game ? rpsView(room.game, self) : 'hotBomb' in room.game ? hotBombView(room.game, self) : viewFor(room.game, self) : null;
+  const gameView = room.game ? 'picturePuzzle' in room.game ? picturePuzzleViewFor(room.game, self) : 'twoHalves' in room.game ? { game: 'twohalves' as const, phase: room.game.phase, players: room.game.players, page: room.game.page, halves: room.game.phase === 'complete' || room.game.solo ? room.game.halves : room.game.halves[self] ? { [self]: room.game.halves[self] } : {}, completed: room.game.completed, paused: room.game.paused, settings: room.game.settings ?? defaultTwoHalvesSettings, ...(room.game.solo ? { solo: true, activeSide: room.game.activeSide } : {}), ...(room.game.tear ? { tear: room.game.tear } : {}) } : 'familyFeud' in room.game ? familyFeudView(room.game, self) : 'slapCount' in room.game ? slapViewFor(room.game, self) : 'cloudGame' in room.game ? cloudViewFor(room.game, self) : 'poisonA' in room.game ? poisonViewFor(room.game, self) : 'cups' in room.game ? cupsViewFor(room.game, self) : 'rps' in room.game ? rpsView(room.game, self) : 'hotBomb' in room.game ? hotBombView(room.game, self) : viewFor(room.game, self) : null;
   return { self, players, status: !other ? 'Waiting for your person…' : other.online ? `${other.name} is here 💗` : `${other.name} disconnected, waiting for them to come back`, game: gameView, scoreboard: room.scoreboard, sameSweetMoments: room.sameSweetMoments, ...(error ? { error } : {}) };
 }
 export function startGame(room: Room, player: string, game: GameId, format: MatchFormat, cups?: Omit<CupsSettings, 'format'>, poison?: Omit<PoisonSettings, 'format'>, cloud?: CloudSettings, slapCount?: SlapSettings, familyFeud?: { rounds: number }, twoHalvesSolo?: boolean) {
@@ -130,6 +160,7 @@ export function startGame(room: Room, player: string, game: GameId, format: Matc
   }
   else if (game === 'hotbomb') room.game = createHotBombGame(player, other, format);
   else if (game === 'twohalves') room.game = { twoHalves: true, phase: 'page', players: [player, solo ? `${player}:solo` : other], halves: {}, completed: {}, paused: false, settings: { ...defaultTwoHalvesSettings }, solo, activeSide: 0 };
+  else if (game === 'picturepuzzle') room.game = { picturePuzzle: true, phase: 'setup', players: [player, other], owner: player, mode: 'together', pieces: 100, rows: 10, cols: 10, cropBox: { x: 0, y: 0, width: 1, height: 1 }, pieceChoices: [], imageAspect: 1, seed: Math.floor(Math.random() * 0x1_0000_0000), ready: { [player]: false, [other]: false }, paused: false, pausedTotalMs: 0, boards: {}, drags: {} };
   else return 'That game is coming soon.';
   return null;
 }
@@ -176,6 +207,249 @@ export function twoHalvesSide(room: Room, player: string, side: unknown) {
   return null;
 }
 export function twoHalvesBack(room: Room) { if (!room.game || !('twoHalves' in room.game)) return 'Start Two Halves first.'; room.game = null; return null; }
+
+export function picturePuzzleSetup(room: Room, player: string, payload: unknown) {
+  const game = room.game;
+  if (!game || !('picturePuzzle' in game)) return 'Start Picture Puzzle first.';
+  if (game.phase !== 'setup' || game.owner !== player) return 'Only the uploader can change the puzzle setup.';
+  if (!payload || typeof payload !== 'object') return 'Choose a picture and puzzle settings.';
+  const update = payload as { image?: unknown; mode?: unknown; pieces?: unknown; rows?: unknown; cols?: unknown; imageAspect?: unknown; cropBox?: unknown; pieceChoices?: unknown };
+  if (typeof update.image !== 'string' || update.image.length > 330_000 || !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(update.image)) return 'Choose a picture smaller than 240 KB after resizing.';
+  if (update.mode !== 'together' && update.mode !== 'race') return 'Choose Solve Together or Race.';
+  if (!Number.isInteger(update.rows) || !Number.isInteger(update.cols) || (update.rows as number) < 2 || (update.cols as number) < 2 || (update.rows as number) > 40 || (update.cols as number) > 40 || (update.rows as number) * (update.cols as number) < 8 || (update.rows as number) * (update.cols as number) > 200 || update.pieces !== (update.rows as number) * (update.cols as number)) return 'Choose one of the available piece counts.';
+  if (typeof update.imageAspect !== 'number' || !Number.isFinite(update.imageAspect) || Math.abs(update.imageAspect - (update.cols as number) / (update.rows as number)) > 0.0001) return 'That puzzle grid does not match its cropped picture.';
+  if (!update.cropBox || typeof update.cropBox !== 'object') return 'Choose a valid crop for this picture.';
+  const cropBox = update.cropBox as Partial<PicturePuzzleCropBox>;
+  if (![cropBox.x, cropBox.y, cropBox.width, cropBox.height].every(value => typeof value === 'number' && Number.isFinite(value)) || cropBox.x! < 0 || cropBox.y! < 0 || cropBox.width! <= 0 || cropBox.height! <= 0 || cropBox.x! + cropBox.width! > 1.0001 || cropBox.y! + cropBox.height! > 1.0001) return 'Choose a valid crop for this picture.';
+  if (typeof update.pieceChoices !== 'object' || !Array.isArray(update.pieceChoices) || update.pieceChoices.length < 1 || update.pieceChoices.length > 193) return 'The picture does not have a valid set of puzzle sizes.';
+  const choices = update.pieceChoices as PicturePuzzleChoice[];
+  if (!choices.every((choice, index) => choice && Number.isInteger(choice.rows) && Number.isInteger(choice.cols) && choice.rows >= 2 && choice.cols >= 2 && choice.rows <= 40 && choice.cols <= 40 && choice.count === choice.rows * choice.cols && choice.count >= 8 && choice.count <= 200 && (index === 0 || choice.count > choices[index - 1].count) && Number.isFinite(choice.crop) && choice.crop >= 0 && choice.crop <= 0.16 && (choice.cropAxis === 'width' || choice.cropAxis === 'height') && choice.cropBox && [choice.cropBox.x, choice.cropBox.y, choice.cropBox.width, choice.cropBox.height].every(value => Number.isFinite(value) && value >= 0 && value <= 1) && choice.cropBox.width > 0 && choice.cropBox.height > 0 && choice.cropBox.x + choice.cropBox.width <= 1.0001 && choice.cropBox.y + choice.cropBox.height <= 1.0001)) return 'The picture has invalid puzzle choices.';
+  if (!choices.some(choice => choice.count === update.pieces && choice.rows === update.rows && choice.cols === update.cols && Math.abs(choice.cropBox.x - cropBox.x!) < 0.0001 && Math.abs(choice.cropBox.y - cropBox.y!) < 0.0001 && Math.abs(choice.cropBox.width - cropBox.width!) < 0.0001 && Math.abs(choice.cropBox.height - cropBox.height!) < 0.0001)) return 'Select an available puzzle size and crop.';
+  game.image = update.image;
+  game.mode = update.mode;
+  game.pieces = update.pieces as number;
+  game.imageAspect = update.imageAspect;
+  game.rows = update.rows as number;
+  game.cols = update.cols as number;
+  game.cropBox = { x: cropBox.x!, y: cropBox.y!, width: cropBox.width!, height: cropBox.height! };
+  game.pieceChoices = choices;
+  game.ready = Object.fromEntries(game.players.map(id => [id, false]));
+  game.boards = {};
+  game.drags = {};
+  return null;
+}
+
+function puzzleMetrics(game: PicturePuzzleGame) {
+  const columns = game.cols;
+  const rows = game.rows;
+  const width = 1000, height = width / game.imageAspect;
+  return { columns, rows, width, height, cellWidth: width / columns, cellHeight: height / rows };
+}
+
+function puzzleRect(game: PicturePuzzleGame, id: number) {
+  const grid = puzzleMetrics(game);
+  const row = Math.floor(id / grid.columns), col = id % grid.columns;
+  return { row, col, x: col * grid.cellWidth, y: row * grid.cellHeight, width: grid.cellWidth, height: grid.cellHeight };
+}
+
+function createPicturePuzzleBoard(game: PicturePuzzleGame): PicturePuzzleBoard {
+  const { cellWidth, cellHeight } = puzzleMetrics(game);
+  let randomSeed = game.seed >>> 0;
+  const random = () => {
+    randomSeed += 0x6d2b79f5;
+    let t = randomSeed;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const order = Array.from({ length: game.pieces }, (_, id) => id);
+  for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+  const positions: Record<number, PicturePuzzlePoint> = {};
+  for (let index = 0; index < order.length; index++) {
+    const id = order[index], sideIndex = Math.floor(index / 2), column = sideIndex % 4, row = Math.floor(sideIndex / 4);
+    const jitterX = (random() - 0.5) * cellWidth * 0.12;
+    const jitterY = (random() - 0.5) * cellHeight * 0.1;
+    positions[id] = {
+      x: index % 2 ? 1000 + picturePuzzleScatterGap + column * (cellWidth + picturePuzzleScatterGap) + jitterX : -(column + 1) * (cellWidth + picturePuzzleScatterGap) + jitterX,
+      y: picturePuzzleScatterGap + row * (cellHeight + picturePuzzleScatterGap) + jitterY,
+    };
+  }
+  return { positions, groups: order.map(id => [id]), locks: {}, zOrder: order };
+}
+
+export function picturePuzzleReady(room: Room, player: string, now = Date.now()) {
+  const game = room.game;
+  if (!game || !('picturePuzzle' in game)) return 'Start Picture Puzzle first.';
+  if (game.phase !== 'setup' || !game.image) return 'Upload a picture before starting.';
+  if (!game.players.includes(player)) return 'Come back into your room first.';
+  if (game.ready[player]) return null;
+  game.ready[player] = true;
+  if (game.players.every(id => game.ready[id])) {
+    game.boards = game.mode === 'together'
+      ? { shared: createPicturePuzzleBoard(game) }
+      : Object.fromEntries(game.players.map(id => [id, createPicturePuzzleBoard(game)]));
+    game.drags = {};
+    game.phase = 'playing';
+    game.startedAt = now;
+  }
+  return null;
+}
+
+function picturePuzzleElapsed(game: PicturePuzzleGame, now: number) {
+  return Math.max(0, now - (game.startedAt ?? now) - game.pausedTotalMs);
+}
+
+function puzzleBoardFor(game: PicturePuzzleGame, player: string) {
+  return game.boards[game.mode === 'race' ? player : 'shared'];
+}
+
+function picturePuzzleDraggedBy(board: PicturePuzzleBoard, groupId: number) {
+  return board.locks[String(groupId)];
+}
+
+function releasePicturePuzzleDrag(game: PicturePuzzleGame, player: string) {
+  const drag = game.drags[player];
+  const board = puzzleBoardFor(game, player);
+  if (drag && board) delete board.locks[String(drag.groupId)];
+  delete game.drags[player];
+}
+
+export function picturePuzzleGrab(room: Room, player: string, piece: unknown) {
+  const game = room.game;
+  if (!game || !('picturePuzzle' in game)) return 'Start Picture Puzzle first.';
+  if (game.phase !== 'playing' || game.paused || !game.players.includes(player)) return 'The puzzle is not accepting moves right now.';
+  if (!Number.isInteger(piece) || (piece as number) < 0 || (piece as number) >= game.pieces) return 'That puzzle piece is invalid.';
+  const board = puzzleBoardFor(game, player);
+  if (!board) return 'The puzzle board is still being prepared.';
+  if (game.drags[player]) return 'Finish moving your current group first.';
+  const pieceId = piece as number;
+  const group = board.groups.find(members => members.includes(pieceId));
+  if (!group) return 'That piece is no longer on the board.';
+  const groupId = Math.min(...group);
+  if (picturePuzzleDraggedBy(board, groupId)) return 'Your person is moving that group.';
+  board.locks[String(groupId)] = player;
+  const origin = Object.fromEntries(group.map(id => [id, { ...board.positions[id] }]));
+  game.drags[player] = { piece: pieceId, groupId, origin };
+  board.zOrder = [...board.zOrder.filter(id => !group.includes(id)), ...group];
+  return null;
+}
+
+export function picturePuzzleMove(room: Room, player: string, piece: unknown, x: unknown, y: unknown) {
+  const game = room.game;
+  if (!game || !('picturePuzzle' in game) || game.phase !== 'playing' || game.paused) return 'The puzzle is not accepting moves right now.';
+  if (!Number.isInteger(piece) || !Number.isFinite(x) || !Number.isFinite(y) || Math.abs(x as number) > 100_000 || Math.abs(y as number) > 100_000) return 'That move is invalid.';
+  const drag = game.drags[player], board = puzzleBoardFor(game, player);
+  if (!drag || drag.piece !== piece || !board || picturePuzzleDraggedBy(board, drag.groupId) !== player) return 'Grab that group before moving it.';
+  const start = drag.origin[drag.piece];
+  if (!start) return 'That group is no longer on the board.';
+  const dx = (x as number) - start.x, dy = (y as number) - start.y;
+  for (const [id, origin] of Object.entries(drag.origin)) board.positions[Number(id)] = { x: origin.x + dx, y: origin.y + dy };
+  return null;
+}
+
+function puzzleNeighbors(game: PicturePuzzleGame, piece: number) {
+  const { columns, rows } = puzzleMetrics(game);
+  const { row, col } = puzzleRect(game, piece);
+  const neighbors: number[] = [];
+  if (col > 0) neighbors.push(piece - 1);
+  if (col < columns - 1 && piece + 1 < game.pieces) neighbors.push(piece + 1);
+  if (row > 0) neighbors.push(piece - columns);
+  if (row < rows - 1 && piece + columns < game.pieces) neighbors.push(piece + columns);
+  return neighbors;
+}
+
+function mergeNearbyPuzzleGroups(game: PicturePuzzleGame, board: PicturePuzzleBoard, initialGroup: number[]) {
+  let moving = [...initialGroup];
+  const tolerance = puzzleMetrics(game).cellWidth * 0.18;
+  let merged = true;
+  while (merged) {
+    merged = false;
+    const membership = new Map<number, number[]>();
+    for (const group of board.groups) for (const id of group) membership.set(id, group);
+    for (const id of moving) {
+      const source = board.positions[id], sourceRect = puzzleRect(game, id);
+      for (const neighborId of puzzleNeighbors(game, id)) {
+        const neighborGroup = membership.get(neighborId);
+        if (!neighborGroup || neighborGroup.some(member => moving.includes(member))) continue;
+        const target = board.positions[neighborId], targetRect = puzzleRect(game, neighborId);
+        const errorX = target.x - source.x - (targetRect.x - sourceRect.x);
+        const errorY = target.y - source.y - (targetRect.y - sourceRect.y);
+        if (Math.hypot(errorX, errorY) > tolerance) continue;
+        for (const member of moving) board.positions[member] = { x: board.positions[member].x + errorX, y: board.positions[member].y + errorY };
+        const combined = [...new Set([...moving, ...neighborGroup])].sort((a, b) => a - b);
+        board.groups = board.groups.filter(group => group !== neighborGroup && !group.some(member => moving.includes(member)));
+        board.groups.push(combined);
+        board.groups.sort((a, b) => a[0] - b[0]);
+        moving = combined;
+        merged = true;
+        break;
+      }
+      if (merged) break;
+    }
+  }
+  return moving;
+}
+
+export function picturePuzzleDrop(room: Room, player: string, piece: unknown, now = Date.now()) {
+  const game = room.game;
+  if (!game || !('picturePuzzle' in game)) return 'Start Picture Puzzle first.';
+  if (game.phase !== 'playing' || !game.players.includes(player)) return 'The puzzle is not accepting moves right now.';
+  const drag = game.drags[player], board = puzzleBoardFor(game, player);
+  if (!drag || drag.piece !== piece || !board) return 'Grab a piece group before dropping it.';
+  const group = board.groups.find(members => members.includes(drag.piece));
+  releasePicturePuzzleDrag(game, player);
+  if (!group) return 'That piece group is no longer on the board.';
+  mergeNearbyPuzzleGroups(game, board, group);
+  if (board.groups.length === 1) {
+    game.phase = 'complete';
+    game.elapsedMs = picturePuzzleElapsed(game, now);
+    if (game.mode === 'race') game.winner = player;
+  }
+  return null;
+}
+
+export function picturePuzzleScatter(room: Room, player: string) {
+  const game = room.game;
+  if (!game || !('picturePuzzle' in game) || game.phase !== 'playing' || game.paused) return 'The puzzle is not accepting moves right now.';
+  if (!game.players.includes(player)) return 'Come back into your room first.';
+  const board = puzzleBoardFor(game, player);
+  if (!board) return 'The puzzle board is still being prepared.';
+  if (Object.keys(board.locks).length) return 'Wait until the group is released before re-scattering.';
+  const { cellWidth, cellHeight } = puzzleMetrics(game);
+  let seed = (game.seed ^ Date.now()) >>> 0;
+  const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+  const order = [...board.groups];
+  for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(random() * (i + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+  for (let index = 0; index < order.length; index++) {
+    const group = order[index], root = group[0], rootRect = puzzleRect(game, root);
+    const sideIndex = Math.floor(index / 2), column = sideIndex % 4, row = Math.floor(sideIndex / 4);
+    const anchorX = (index % 2 ? 1000 + picturePuzzleScatterGap + column * (cellWidth + picturePuzzleScatterGap) : -(column + 1) * (cellWidth + picturePuzzleScatterGap)) + (random() - 0.5) * 8;
+    const anchorY = picturePuzzleScatterGap + row * (cellHeight + picturePuzzleScatterGap) + (random() - 0.5) * 8;
+    for (const id of group) {
+      const rect = puzzleRect(game, id);
+      board.positions[id] = { x: anchorX + rect.x - rootRect.x, y: anchorY + rect.y - rootRect.y };
+    }
+  }
+  return null;
+}
+
+export function picturePuzzleReplay(room: Room, player: string) {
+  const game = room.game;
+  if (!game || !('picturePuzzle' in game)) return 'Start Picture Puzzle first.';
+  if (game.phase !== 'complete' || !game.players.includes(player)) return 'Finish the current puzzle first.';
+  game.phase = 'setup';
+  game.ready = Object.fromEntries(game.players.map(id => [id, false]));
+  game.boards = {};
+  game.drags = {};
+  game.startedAt = undefined;
+  game.pausedTotalMs = 0;
+  game.pausedAt = undefined;
+  game.winner = undefined;
+  game.elapsedMs = undefined;
+  return null;
+}
+
+export function picturePuzzleBack(room: Room) { if (!room.game || !('picturePuzzle' in room.game)) return 'Start Picture Puzzle first.'; room.game = null; return null; }
 
 const twoHalvesSplits: TwoHalvesSplit[] = ['vertical', 'horizontal'];
 const twoHalvesTears: TwoHalvesTearStyle[] = ['rip', 'cut', 'none'];
@@ -369,7 +643,7 @@ export function makeGuess(room: Room, player: string, letter: string) {
   if (!error && before !== game.matchScore[game.setter] + game.matchScore[game.guesser]) room.scoreboard.hangman[game.roundWinner!] = (room.scoreboard.hangman[game.roundWinner!] ?? 0) + 1;
   return error;
 }
-export function reaction(room: Room, player: string, emoji: string) { if (room.game?.phase === 'playing' && isReactionId(emoji)) room.game.lastReaction = { player, emoji, at: Date.now() }; }
+export function reaction(room: Room, player: string, emoji: string) { if (room.game && 'lastReaction' in room.game && room.game.phase === 'playing' && isReactionId(emoji)) room.game.lastReaction = { player, emoji, at: Date.now() }; }
 
 export function validCloudSettings(settings: CloudSettings): boolean {
   return [30, 50, 100].includes(settings.targetBoxes) && [0, 1, 2, 3].includes(settings.catchBonus) &&

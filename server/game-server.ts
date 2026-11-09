@@ -7,7 +7,7 @@ import { Server } from 'socket.io';
 import type { ClientToServerEvents, ServerToClientEvents } from '@arcade/shared';
 import type { CloudMove } from '@arcade/shared';
 import type { SlapMove } from '@arcade/shared';
-import { backToLobby, cloudMove, cupsGuess, cupsHint, cupsLock, cupsReact, disconnect, enterRoom, lobbyView, makeGuess, nextCloudRound, nextHangman, nextSlapRound, playerFor, poisonForcedLoss, poisonLock, poisonPick, poisonReact, poisonTap, poisonTimeout, nextPoisonRound, reaction, roomForSocket, setHangman, slapCompleteResolve, slapMove, slapResolveWindow, slapStartPlaying, startGame, markSlapCardVisible, updatePlayerDoodle, familyFeudStart, familyFeudSubmit, familyFeudScore, familyFeudNext, familyFeudTimeout, rpsChoose, rpsNext, hotBombAction, hotBombNext, advanceHotBombRoom, hotBombTimerAt, twoHalvesPage, twoHalvesPaint, twoHalvesComplete, twoHalvesBack, twoHalvesSettings, twoHalvesTear, twoHalvesSide, leaveRoom } from './rooms.js';
+import { backToLobby, cloudMove, cupsGuess, cupsHint, cupsLock, cupsReact, disconnect, enterRoom, lobbyView, makeGuess, nextCloudRound, nextHangman, nextSlapRound, playerFor, poisonForcedLoss, poisonLock, poisonPick, poisonReact, poisonTap, poisonTimeout, nextPoisonRound, reaction, roomForSocket, setHangman, slapCompleteResolve, slapMove, slapResolveWindow, slapStartPlaying, startGame, markSlapCardVisible, updatePlayerDoodle, familyFeudStart, familyFeudSubmit, familyFeudScore, familyFeudNext, familyFeudTimeout, rpsChoose, rpsNext, hotBombAction, hotBombNext, advanceHotBombRoom, hotBombTimerAt, twoHalvesPage, twoHalvesPaint, twoHalvesComplete, twoHalvesBack, twoHalvesSettings, twoHalvesTear, twoHalvesSide, picturePuzzleSetup, picturePuzzleReady, picturePuzzleGrab, picturePuzzleMove, picturePuzzleDrop, picturePuzzleScatter, picturePuzzleReplay, picturePuzzleBack, leaveRoom } from './rooms.js';
 import { checkForcedLoss, legalTiles } from './games/poison.js';
 import { clearLockout, completeSwap, pauseTimers, resumeTimers, timeoutCall, timeoutHunt, type CloudGame } from './games/cloud.js';
 import { completeResolve, pauseTimers as pauseSlapTimers, recordOneWayLatency, resumeTimers as resumeSlapTimers, type SlapCountGame } from './games/slapcount.js';
@@ -22,6 +22,7 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
   path: '/socket.io',
   cors: { origin: process.env.CLIENT_ORIGIN?.split(',') ?? true },
 });
+const picturePuzzleImagesSent = new Map<string, { seed: number; image: string }>();
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const clientDist = path.resolve(root, '../../client/dist');
@@ -37,7 +38,13 @@ function publish(room: NonNullable<ReturnType<typeof roomForSocket>>) {
       io.to(p.socketId).emit('slap:cardLaid', { cardId: game.currentCardId, card: { value: game.currentCard.value, suit: game.currentCard.suit }, count: game.settings.callMode ? null : game.currentCardCount, serverTime: game.currentCardSentAt });
       markSlapCardVisible(room, p.id);
     }
-    io.to(p.socketId).emit('roomState', lobbyView(room, p.id));
+    const state = lobbyView(room, p.id);
+    if (state.game?.game === 'picturepuzzle' && state.game.image) {
+      const sent = picturePuzzleImagesSent.get(p.socketId);
+      if (state.game.phase !== 'setup' && sent?.seed === state.game.seed && sent.image === state.game.image) delete state.game.image;
+      else picturePuzzleImagesSent.set(p.socketId, { seed: state.game.seed, image: state.game.image });
+    }
+    io.to(p.socketId).emit('roomState', state);
   }
 }
 
@@ -305,6 +312,14 @@ io.on('connection', socket => {
   socket.on('twohalves:tear', payload => action((r, p) => twoHalvesTear(r, p, payload)));
   socket.on('twohalves:complete', payload => action((r, p) => twoHalvesComplete(r, p, payload?.side)));
   socket.on('twohalves:back', () => action(r => twoHalvesBack(r)));
+  socket.on('picturepuzzle:setup', (payload, ack) => action((r, p) => picturePuzzleSetup(r, p, payload), ack));
+  socket.on('picturepuzzle:ready', ack => action((r, p) => picturePuzzleReady(r, p), ack));
+  socket.on('picturepuzzle:grab', ({ piece }, ack) => action((r, p) => picturePuzzleGrab(r, p, piece), ack));
+  socket.on('picturepuzzle:move', ({ piece, x, y }) => action((r, p) => picturePuzzleMove(r, p, piece, x, y)));
+  socket.on('picturepuzzle:drop', ({ piece }) => action((r, p) => picturePuzzleDrop(r, p, piece)));
+  socket.on('picturepuzzle:scatter', () => action((r, p) => picturePuzzleScatter(r, p)));
+  socket.on('picturepuzzle:replay', () => action((r, p) => picturePuzzleReplay(r, p)));
+  socket.on('picturepuzzle:back', () => action(r => picturePuzzleBack(r)));
   socket.on('setHangmanWord', ({ word, hint }) => action((r, p) => setHangman(r, p, word, hint)));
   socket.on('guessLetter', ({ letter }) => action((r, p) => makeGuess(r, p, letter)));
   socket.on('hangmanReaction', ({ emoji }) => action((r, p) => reaction(r, p, emoji)));
@@ -376,6 +391,7 @@ io.on('connection', socket => {
   });
   socket.on('disconnect', () => {
     pendingSlapPings.delete(socket.id);
+    picturePuzzleImagesSent.delete(socket.id);
     const room = disconnect(socket.id);
     if (room) { schedulePoisonTimer(room); scheduleCloudTimer(room); scheduleSlapTimer(room); scheduleFamilyFeudTimer(room); scheduleHotBombTimer(room); publish(room); }
   });

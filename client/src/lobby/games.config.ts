@@ -1,7 +1,7 @@
 import type { ComponentType } from 'react';
 import { TicketIllustration } from './TicketIllustration';
 
-export type LobbyGameId = 'hangman'|'cups'|'poison'|'cloud'|'slapcount'|'familyfeud'|'rps'|'hotbomb'|'twohalves';
+export type LobbyGameId = 'hangman'|'cups'|'poison'|'cloud'|'slapcount'|'familyfeud'|'rps'|'hotbomb'|'twohalves'|'picturepuzzle';
 export type SettingOption = { label: string; value: string|number|boolean };
 export type GameSetting = { id: string; label: string; type: 'select'|'checkbox'; default: string|number|boolean; options?: SettingOption[] };
 export type GameTicketConfig = { id: LobbyGameId; title: string; tagline: string; description: string; accent: string; formats: Array<'quick'|'bestOf3'|'bestOf5'>; settings: GameSetting[]; image?: string; duration?: string; art: ComponentType<{ className?: string }> };
@@ -44,6 +44,7 @@ export const gameRegistry: GameTicketConfig[] = [
   { id: 'hotbomb', title: 'Hot Bomb', tagline: 'A LITTLE BLUFF - 2 PLAYERS', description: 'Pass it fast or hold your nerve. The fuse is secret.', accent: 'var(--peach)', formats: ['quick','bestOf3','bestOf5'], settings: [], duration: '~3 min', art: TicketIllustration },
   { id: 'rps', title: 'Rock Paper Scissors', tagline: 'SILLY SHOWDOWN · 2 PLAYERS', description: 'Pick your move, reveal together, and race to three wins.', accent: 'var(--mint)', formats: ['bestOf5'], settings: [], art: TicketIllustration },
   { id: 'twohalves', title: 'Two Halves', tagline: 'COLORING DATE · 2 PLAYERS', description: 'Split a coloring page, paint your own side, and make one little masterpiece together.', accent: 'var(--peach)', formats: ['quick'], settings: [], duration: '~10 min', art: TicketIllustration },
+  { id: 'picturepuzzle', title: 'Picture Puzzle', tagline: 'JIGSAW DUEL · 2 PLAYERS', description: 'Turn a favorite picture into a giant jigsaw. Team up or race to solve it.', accent: 'var(--butter)', formats: ['quick'], settings: [], duration: '~5 min', art: TicketIllustration },
 ];
 
 export function defaultSettings(config: GameTicketConfig) { return Object.fromEntries(config.settings.map(setting => [setting.id, setting.default])); }

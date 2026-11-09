@@ -12,6 +12,7 @@ import { FamilyFeudGame } from './components/games/family-feud/FamilyFeudGame';
 import { RockPaperScissorsGame } from './components/games/rps/RockPaperScissorsGame';
 import { HotBombGame } from './components/games/hot-bomb/HotBombGame';
 import { TwoHalvesGame } from './components/games/two-halves/TwoHalvesGame';
+import { PicturePuzzleGame } from './components/games/picture-puzzle/PicturePuzzleGame';
 import { GameScreenErrorBoundary } from './components/games/GameScreenErrorBoundary';
 import { Scene, SceneSettings } from './scene/Scene';
 import { sceneConfig } from './scene/config';
@@ -56,6 +57,7 @@ function startLobbyGame(socket: ArcadeSocket, id: LobbyGameId, format: string, s
   if (id === 'rps') socket.emit('startGame', { game: 'rps', format: 'bestOf5' });
   if (id === 'hotbomb') socket.emit('startGame', { game: 'hotbomb', format: format as 'quick' | 'bestOf3' | 'bestOf5' });
   if (id === 'twohalves') socket.emit('startGame', { game: 'twohalves', format: 'quick' });
+  if (id === 'picturepuzzle') socket.emit('startGame', { game: 'picturepuzzle', format: 'quick' });
 }
 
 export default function App() {
@@ -93,7 +95,16 @@ export default function App() {
       if (savedCode && savedName) socket.emit('enter', profilePayload(savedName, savedCode));
     };
     const onDisconnect = () => setConnected(false);
-    const onRoomState = (s: RoomView) => { if (signedOut.current) return; setRoom(s); setJoinError(''); setActionError(''); };
+    const onRoomState = (s: RoomView) => {
+      if (signedOut.current) return;
+      setRoom(previous => {
+        if (s.game?.game === 'picturepuzzle' && !s.game.image && previous?.game?.game === 'picturepuzzle' && previous.game.seed === s.game.seed && previous.game.image) {
+          return { ...s, game: { ...s.game, image: previous.game.image } };
+        }
+        return s;
+      });
+      setJoinError(''); setActionError('');
+    };
     const onJoinError = (e: string) => setJoinError(e);
     const onActionError = (e: string) => { setActionError(e); window.setTimeout(() => setActionError(''), 2800); };
     socket.on('connect', onConnect); socket.on('disconnect', onDisconnect);
@@ -173,12 +184,13 @@ export default function App() {
   const isQuietGame = !!game;
   const myDoodle = selectedDoodle || (room ? playerDoodleId(room.players, me) : 'her');
   const partnerDoodle = room ? playerDoodleId(room.players, room.players.find(player => player.id !== room.self)) : 'him';
-  return <main className={`app-shell ${!isQuietGame ? 'scene-active' : ''} ${game ? 'game-active' : ''} ${game?.game === 'cups' ? 'cups-app-shell' : ''} ${game?.game === 'hangman' ? 'hangman-app-shell' : ''} ${game?.game === 'poison' ? 'poison-app-shell' : ''} ${game?.game === 'cloud' ? 'cloud-app-shell' : ''} ${game?.game === 'slapcount' ? 'slap-app-shell' : ''} ${game?.game === 'familyfeud' ? 'family-feud-app-shell' : ''} ${game?.game === 'rps' ? 'rps-app-shell' : ''} ${game?.game === 'hotbomb' ? 'hot-bomb-app-shell' : ''} ${game?.game === 'twohalves' ? 'twohalves-app-shell' : ''}`}>
+  const latestReaction = game && 'lastReaction' in game ? game.lastReaction : undefined;
+  return <main className={`app-shell ${!isQuietGame ? 'scene-active' : ''} ${game ? 'game-active' : ''} ${game?.game === 'cups' ? 'cups-app-shell' : ''} ${game?.game === 'hangman' ? 'hangman-app-shell' : ''} ${game?.game === 'poison' ? 'poison-app-shell' : ''} ${game?.game === 'cloud' ? 'cloud-app-shell' : ''} ${game?.game === 'slapcount' ? 'slap-app-shell' : ''} ${game?.game === 'familyfeud' ? 'family-feud-app-shell' : ''} ${game?.game === 'rps' ? 'rps-app-shell' : ''} ${game?.game === 'hotbomb' ? 'hot-bomb-app-shell' : ''} ${game?.game === 'twohalves' ? 'twohalves-app-shell' : ''} ${game?.game === 'picturepuzzle' ? 'picture-puzzle-app-shell' : ''}`}>
     {!isQuietGame && <><Scene rooftop={!!room}/>{!room && <div className="scene-actors login-actors" style={{ '--doodle-left': `${sceneConfig.doodlePlacement.left}%`, '--doodle-right': `${sceneConfig.doodlePlacement.right}%`, '--doodle-bottom': `${100 - sceneConfig.doodlePlacement.baseline}%` } as React.CSSProperties}>
       <div className="scene-actor"><Doodle id={room ? myDoodle : 'sunny'} name={room ? me?.name : 'You'} size="clamp(58px, 9vw, 116px)"/><span>{room ? me?.name : 'you'}</span></div>
       <div className="scene-actor"><Doodle id={room ? partnerDoodle : 'moonbeam'} name={room ? other?.name : 'Your person'} size="clamp(58px, 9vw, 116px)"/><span>{room ? other?.name || 'your person' : 'your person'}</span></div>
     </div>}</>}
-    <FloatingReactions reaction={game?.lastReaction} self={room?.self} />
+    <FloatingReactions reaction={latestReaction} self={room?.self} />
     <header className="topbar"><a className="brand" href="#home" onClick={e => { e.preventDefault(); if (room) socket.emit('backToLobby'); }}><span className="brand-icon">✦</span><span>our little <b>arcade</b></span></a><div className="topbar-actions">{room && !game && <button ref={doodlePickerTrigger} type="button" className="doodle-picker-trigger" onClick={() => setDoodlePickerOpen(true)}><Doodle id={myDoodle} size={56} crop name={me?.name}/><span>Pick your doodle</span></button>}<span className={`connection ${connected ? 'online' : ''}`}><i />{connected ? 'connected' : 'reconnecting…'}</span>{room && <button type="button" className="sign-out-button" onClick={signOut} title="Leave the room and clear this device">Sign out</button>}<SceneSettings muted={muted} onMute={toggleMute} onShareSkyChange={() => syncProfile()}/></div></header>
     {!room ? <section className="landing">
       <div className="landing-copy"><div className="eyebrow"><span>✧</span> JUST FOR TWO <span>✧</span></div><h1>A little place<br />for <em>us</em> to play.</h1><p>Pick a game, settle in, and make a tiny memory together.</p><div className="floaty floaty-one">☾</div><div className="floaty floaty-two">✦</div></div>
@@ -199,7 +211,7 @@ export default function App() {
       {import.meta.env.DEV && !game && room.players.length === 1 && <button type="button" className="solo-lobby-button" onClick={() => socket.emit('startGame', { game: 'twohalves', format: 'quick', solo: true })}>Play alone · Two Halves preview →</button>}
       {actionError && <div className="toast" role="status">{actionError}</div>}
       {game ? <GameScreenErrorBoundary key={game.game} onBackToLobby={() => socket.emit('backToLobby')}>
-        {game.game === 'hangman' ? <HangmanScreen game={game} self={room.self} players={displayPlayers} socket={socket} word={word} setWord={setWord} hint={hint} setHint={setHint} connected={connected} muted={muted} onToggleMute={toggleMute} /> : game.game === 'cups' ? <CupsGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'poison' ? <PoisonGame game={game} self={room.self} players={displayPlayers} socket={socket} sameSweetMoments={room.sameSweetMoments} /> : game.game === 'cloud' ? <CloudGame game={game} self={room.self} players={displayPlayers} socket={socket} connected={connected} /> : game.game === 'slapcount' ? <SlapCountGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'familyfeud' ? <FamilyFeudGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'rps' ? <RockPaperScissorsGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'hotbomb' ? <HotBombGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'twohalves' ? <TwoHalvesGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : null}
+        {game.game === 'hangman' ? <HangmanScreen game={game} self={room.self} players={displayPlayers} socket={socket} word={word} setWord={setWord} hint={hint} setHint={setHint} connected={connected} muted={muted} onToggleMute={toggleMute} /> : game.game === 'cups' ? <CupsGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'poison' ? <PoisonGame game={game} self={room.self} players={displayPlayers} socket={socket} sameSweetMoments={room.sameSweetMoments} /> : game.game === 'cloud' ? <CloudGame game={game} self={room.self} players={displayPlayers} socket={socket} connected={connected} /> : game.game === 'slapcount' ? <SlapCountGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'familyfeud' ? <FamilyFeudGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'rps' ? <RockPaperScissorsGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'hotbomb' ? <HotBombGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'twohalves' ? <TwoHalvesGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : game.game === 'picturepuzzle' ? <PicturePuzzleGame game={game} self={room.self} players={displayPlayers} socket={socket} /> : null}
       </GameScreenErrorBoundary> : <section className="lobby-layout">
         <div className="games-column"><div className="lobby-games-heading"><div><div className="eyebrow">CHOOSE YOUR LITTLE ADVENTURE</div><h2>What shall we play?</h2></div><span className="tiny-sparkle">✧ ✦ ✧</span></div><div className="game-tickets">{gameRegistry.map(config => <GameTicket key={config.id} config={config} canPlay={canStartGame} onLaunch={(format, settings) => startLobbyGame(socket, config.id, format, settings)}/>)}</div><div className="lobby-coming-row"><span>ON THE WAY</span><i>Memory Duel</i><i>Draw &amp; Guess</i></div></div>
         <aside className="lobby-side-column"><LobbyScoreboard players={displayPlayers} self={room.self} scores={room.scoreboard} sameSweetMoments={room.sameSweetMoments}/><div className="panel note-card"><span>✉</span><p>Two players. One tiny corner. Infinite rematches.</p></div></aside>

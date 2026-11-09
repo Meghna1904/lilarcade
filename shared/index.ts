@@ -1,4 +1,4 @@
-export type GameId = 'hangman' | 'cups' | 'poison' | 'cloud' | 'slapcount' | 'familyfeud' | 'rps' | 'hotbomb' | 'twohalves';
+export type GameId = 'hangman' | 'cups' | 'poison' | 'cloud' | 'slapcount' | 'familyfeud' | 'rps' | 'hotbomb' | 'twohalves' | 'picturepuzzle';
 export { REACTIONS, isReactionId } from './reactions.js';
 export type { ReactionId } from './reactions.js';
 export type MatchFormat = 'quick' | 'bestOf3' | 'bestOf5';
@@ -129,6 +129,18 @@ export type TwoHalvesView = {
   settings: TwoHalvesSettings; tear?: TwoHalvesTear; solo?: boolean; activeSide?: 0 | 1;
   lastReaction?: { player: string; emoji: string; at: number };
 };
+export type PicturePuzzleMode = 'together' | 'race';
+export type PicturePuzzlePoint = { x: number; y: number };
+export type PicturePuzzleCropBox = { x: number; y: number; width: number; height: number };
+export type PicturePuzzleChoice = { count: number; rows: number; cols: number; crop: number; cropAxis: 'width' | 'height'; cropBox: PicturePuzzleCropBox };
+export type PicturePuzzleBoard = { positions: Record<number, PicturePuzzlePoint>; groups: number[][]; locks: Record<string, string>; zOrder: number[] };
+export type PicturePuzzleView = {
+  game: 'picturepuzzle'; phase: 'setup' | 'playing' | 'complete'; players: [string, string]; owner: string;
+  image?: string; imageAspect: number; mode: PicturePuzzleMode; pieces: number; rows: number; cols: number;
+  cropBox: PicturePuzzleCropBox; pieceChoices: PicturePuzzleChoice[]; seed: number;
+  ready: Record<string, boolean>; paused: boolean; startedAt?: number;
+  pausedTotalMs: number; pausedAt?: number; board: PicturePuzzleBoard; winner?: string; elapsedMs?: number;
+};
 export type PoisonMove =
   | { type: 'poison:pickTile'; tile: number }
   | { type: 'poison:lockPick' }
@@ -149,7 +161,7 @@ export type SlapMove =
   | { type: 'slap:nextRound' }
   | { type: 'slap:backToLobby' };
 export type RoomView = {
-  self: string; players: PlayerSummary[]; status: string; game: HangmanView | CupsView | PoisonView | CloudView | SlapView | FamilyFeudView | RpsView | HotBombView | TwoHalvesView | null;
+  self: string; players: PlayerSummary[]; status: string; game: HangmanView | CupsView | PoisonView | CloudView | SlapView | FamilyFeudView | RpsView | HotBombView | TwoHalvesView | PicturePuzzleView | null;
   scoreboard: Scoreboard; sameSweetMoments: number; error?: string;
 };
 export type ClientToServerEvents = {
@@ -169,6 +181,14 @@ export type ClientToServerEvents = {
   'twohalves:fill': (payload: { id: string; seq: number; x: number; y: number; color: string }) => void;
   'twohalves:complete': (payload?: { side?: 0 | 1 }) => void;
   'twohalves:back': () => void;
+  'picturepuzzle:setup': (payload: { image: string; mode: PicturePuzzleMode; pieces: number; rows: number; cols: number; imageAspect: number; cropBox: PicturePuzzleCropBox; pieceChoices: PicturePuzzleChoice[] }, ack?: (error: string | null) => void) => void;
+  'picturepuzzle:ready': (ack?: (error: string | null) => void) => void;
+  'picturepuzzle:grab': (payload: { piece: number }, ack?: (error: string | null) => void) => void;
+  'picturepuzzle:move': (payload: { piece: number; x: number; y: number }) => void;
+  'picturepuzzle:drop': (payload: { piece: number }) => void;
+  'picturepuzzle:scatter': () => void;
+  'picturepuzzle:replay': () => void;
+  'picturepuzzle:back': () => void;
   'familyfeud:start': () => void;
   'familyfeud:submit': (payload: { answer: string }) => void;
   'familyfeud:score': (payload: { target: string; matchIndex: number | null; points: number }) => void;
