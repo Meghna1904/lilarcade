@@ -22,6 +22,7 @@ import {
   sparkles, stitchBars, tearPolygon, threadDashes, toClipPath, zigzagPath, type SplitAxis,
 } from './tear';
 import { clampPan, clampZoom, fitScale, imageOrigin, panToPoint, pointerToPage, type Point } from './view';
+import { COLORING_PAGES, type ColoringPage } from './pages';
 import './two-halves.css';
 import './two-halves-studio.css';
 
@@ -35,7 +36,6 @@ const palettes: Record<Palette, string[]> = {
   Neon: ['#ff0054','#ff006e','#f72585','#ff70a6','#ff99c8','#fb5607','#ff4d00','#ff7b00','#ffbe0b','#f9f871','#d0ff00','#caff00','#aaff00','#70e000','#00ff9f','#00f5d4','#80ffdb','#00f0ff','#48bfe3','#00bbf9','#3a86ff','#4361ee','#5e60ce','#7209b7','#8338ec','#b5179e','#e0aaff','#ff00ff','#ff3131','#ffea00','#39ff14','#7df9ff','#fe53bb','#adff2f','#bf00ff','#00ffff'],
   Earth: ['#1f1b16','#26231f','#463f3a','#5d5147','#8a7867','#b6a58f','#d6c6b2','#51372f','#754c37','#98694f','#c4926b','#e0a96d','#62543f','#87744f','#a59767','#c7b985','#35594b','#4e755b','#769477','#a8b899','#344955','#4a6671','#718b91','#9eb5b5','#5a4356','#806478','#a88b9d','#cdb8c2','#7f5539','#9c6644','#b08968','#52796f','#84a98c','#cad2c5','#6b705c','#cb997e'],
 };
-const samplePage = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="720" viewBox="0 0 1040 720"><rect width="1040" height="720" fill="white"/><g fill="none" stroke="#292735" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="M80 600c130-40 240-40 370 0s250 40 510 0M185 565c0-160 145-310 335-310s335 150 335 310M520 255V98m0 74c-80-110-210-95-207-8 2 70 110 103 207 8m0 55c77-108 200-94 198-10-2 70-105 99-198 10M273 433c28-48 78-48 106 0-30 48-78 48-106 0zm92 0h-78m375 0c28-48 78-48 106 0-30 48-78 48-106 0zm92 0h-78M416 498q104 80 208 0m-193-4 20 12m137-12-20 12M223 365l-46-28m640 28 46-28M320 292l-20-48m420 48 20-48"/><path d="M110 627q25-45 50 0t50 0t50 0t50 0t50 0t50 0t50 0t50 0t50 0t50 0t50 0t50 0t50 0t50 0t50 0t50 0"/></g><g fill="#292735"><circle cx="335" cy="425" r="8"/><circle cx="705" cy="425" r="8"/></g></svg>')}`;
 const toolList: Array<{ id: Tool; icon: string; label: string }> = [
   { id: 'fill', icon: '◈', label: 'Fill' }, { id: 'pencil', icon: '✎', label: 'Pencil' }, { id: 'marker', icon: '／', label: 'Marker' }, { id: 'crayon', icon: '╱', label: 'Crayon' },
   { id: 'pastel', icon: '▯', label: 'Pastel' }, { id: 'watercolor', icon: '♧', label: 'Watercolor' }, { id: 'brush', icon: '🖌', label: 'Brush' },
@@ -111,6 +111,30 @@ async function loadImageSource(file: File): Promise<ImageSource> {
     const image = await imageFrom(url);
     return { source: image, width: image.naturalWidth, height: image.naturalHeight };
   } finally { URL.revokeObjectURL(url); }
+}
+
+/**
+ * Draws a built-in sheet at its full 1200 × 900 size and shares it as one image.
+ * PNG keeps vector-sharp lines; a high-quality JPEG is only used if a sheet's
+ * line work would not fit in the socket payload.
+ */
+async function pageSheet(page: ColoringPage): Promise<string | null> {
+  const image = await imageFrom(page.uri);
+  const canvas = document.createElement('canvas');
+  canvas.width = page.width;
+  canvas.height = page.height;
+  const context = canvas.getContext('2d');
+  if (!context) return null;
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, page.width, page.height);
+  context.drawImage(image, 0, 0, page.width, page.height);
+  let data = canvas.toDataURL('image/png');
+  let quality = 0.94;
+  while (data.length > MAX_PAGE_CHARS && quality > 0.5) {
+    data = canvas.toDataURL('image/jpeg', quality);
+    quality -= 0.06;
+  }
+  return data.length <= MAX_PAGE_CHARS ? data : null;
 }
 
 /** Rebuilds a page half as transparent line art: alpha = 255 - luminance. */
@@ -879,7 +903,7 @@ export function TwoHalvesGame({ game, self, players, socket }: Props) {
 
   /* ------------------------------------------------------------- actions */
 
-  const startPage = async (file?: File) => {
+  const startPage = async (file?: File, chosen?: ColoringPage) => {
     setError('');
     setBusy(true);
     try {
@@ -887,7 +911,14 @@ export function TwoHalvesGame({ game, self, players, socket }: Props) {
         if (!file.type.startsWith('image/')) { setError('That file is not an image. Choose a PNG, JPG or WebP.'); return; }
         if (file.size > MAX_UPLOAD_BYTES) { setError('That picture is larger than 10 MB. Please choose a smaller one.'); return; }
       }
-      const loaded = file ? await loadImageSource(file) : { source: await imageFrom(samplePage), width: 1040, height: 720 };
+      if (!file) {
+        if (!chosen) return;
+        const sheet = await pageSheet(chosen);
+        if (!sheet) { setError('That page is too detailed to share. Please pick another one.'); return; }
+        socket.emit('twohalves:page', { page: sheet });
+        return;
+      }
+      const loaded = await loadImageSource(file);
       let scale = Math.min(1, MAX_PAGE_WIDTH / loaded.width, MAX_PAGE_HEIGHT / loaded.height);
       let data = '';
       // Very detailed photos cannot reach the page cap at full size, so shrink and
@@ -1095,7 +1126,7 @@ export function TwoHalvesGame({ game, self, players, socket }: Props) {
 
   return <section className="twohalves-screen">
     {game.paused && <p className="twohalves-wait" role="status">Waiting for your person to reconnect…</p>}
-    {game.phase === 'page' && <main className="twohalves-welcome"><div className="twohalves-copy"><span className="twohalves-kicker">STEP 01 · PICK A PAGE</span><h1>Two hands.<br />One <em>masterpiece.</em></h1><p>Pick a coloring page, split it down the middle, and paint your own side. Then bring them together and see what you made.</p><div className="twohalves-page-actions"><button className="twohalves-primary" disabled={busy} onClick={() => void startPage()}>{busy ? 'Getting things ready…' : 'Try our little page ✦'}</button><label className="twohalves-upload">Upload any picture<input type="file" accept="image/*" onChange={event => { const file = event.target.files?.[0]; if (file) void startPage(file); event.target.value = ''; }} /></label></div>{error && <div className="twohalves-upload-error" role="alert">{error}</div>}<small>Any picture your browser can open · under 10 MB before resizing</small></div><div className="twohalves-preview-card"><div className="twohalves-sample-art"><img src={samplePage} alt="A line drawing of a smiling sun" /><i /><span>YOUR PAGE, IN TWO</span></div><div className="twohalves-pair"><span>{me?.name ?? 'You'} <b>{split === 'vertical' ? 'left half' : 'top half'}</b></span><span>{partner?.name ?? 'Your person'} <b>{split === 'vertical' ? 'right half' : 'bottom half'}</b></span></div></div></main>}
+    {game.phase === 'page' && <main className="twohalves-welcome"><div className="twohalves-copy"><span className="twohalves-kicker">STEP 01 · PICK A PAGE</span><h1>Two hands.<br />One <em>masterpiece.</em></h1><p>Pick a coloring page, split it down the middle, and paint your own side. Then bring them together and see what you made.</p><div className="twohalves-page-actions">{busy && <span className="twohalves-page-busy" role="status">Preparing your page…</span>}<label className="twohalves-upload">Upload any picture<input type="file" accept="image/*" onChange={event => { const file = event.target.files?.[0]; if (file) void startPage(file); event.target.value = ''; }} /></label></div>{error && <div className="twohalves-upload-error" role="alert">{error}</div>}<small>Any picture your browser can open · under 10 MB before resizing</small></div><div className="twohalves-preview-card twohalves-page-panel"><div className="twohalves-page-head"><span>COLORING SHEETS · 4:3</span><small>600 × 900 per half</small></div><div className="twohalves-page-grid">{COLORING_PAGES.map(page => <button type="button" key={page.id} className="twohalves-page-card" disabled={busy} onClick={() => void startPage(undefined, page)}><span className="twohalves-page-thumb"><img src={page.uri} alt="" loading="lazy" /></span><b>{page.name}</b><small>{page.note}</small></button>)}</div><div className="twohalves-pair"><span>{me?.name ?? 'You'} <b>{split === 'vertical' ? 'left half' : 'top half'}</b></span><span>{partner?.name ?? 'Your person'} <b>{split === 'vertical' ? 'right half' : 'bottom half'}</b></span></div></div></main>}
 
     {game.phase === 'coloring' && stage === 'tear' && game.page && <main className="twohalves-tear">
       <div className="twohalves-tear-copy">
